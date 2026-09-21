@@ -357,7 +357,7 @@ docker ps
 ## 九、Demo 实施方案（已落地）
 
 > 2026-09 更新：客户演示阶段已按"最小可用闭环"实现，架构相对原方案大幅简化。
-> 代码位于 `../ezcontract-api/`（FastAPI）与 `../ezcontract-web/`（Vue3），详见根目录 `README.md`。
+> 代码位于 `faheng-api/`（FastAPI）与 `faheng-web/`（Vue3），详见根目录 `README.md`。
 
 ### 9.1 架构简化决策
 

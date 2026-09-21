@@ -1,4 +1,4 @@
-"""ezContract API — 智能合同 Demo 后端"""
+"""法衡 AI · 企业多智能体工作台 — API（Demo）"""
 import uvicorn
 
 if __name__ == "__main__":

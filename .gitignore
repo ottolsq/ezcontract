@@ -13,9 +13,9 @@ dist/
 *.env.local
 
 # 运行时数据
-ezcontract-api/data/uploads/
-ezcontract-api/data/exports/
-ezcontract-api/data/*.docx
+faheng-api/data/uploads/
+faheng-api/data/exports/
+faheng-api/data/*.docx
 
 # IDE / 系统
 .idea/

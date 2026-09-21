@@ -1,4 +1,4 @@
-"""ezContract API 入口"""
+"""法衡 AI · 企业多智能体工作台 — API 入口（Demo）"""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -6,7 +6,7 @@ from app.config import settings
 from app.llm.client import chat_text
 from app.routers import draft, review
 
-app = FastAPI(title="ezContract 智能合同 Demo API", version="0.1.0")
+app = FastAPI(title="法衡 AI 企业多智能体工作台 API (Demo)", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,

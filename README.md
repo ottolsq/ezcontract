@@ -1,13 +1,15 @@
-# ezContract 智能合同 Demo
+# 法衡 AI · 企业多智能体工作台（Demo）
 
-客户演示用智能合同系统：**合同起草**（关键词→AI 生成模板→编辑→导出 Word）+ **合同审查**（上传合同→AI 按规则库审查→风险清单→采纳/修改/不采纳→导出修改后合同与审核报告）。
+> 品牌定位：**法衡 AI** —— 企业多智能体工作台。当前交付合同双智能体（起草 / 审查），后续扩展履约提醒、会议纪要、员工管理、工作内容管理等智能体。
+
+客户演示用智能合同模块：**合同起草**（关键词→AI 生成模板→编辑→导出 Word）+ **合同审查**（上传合同→AI 按规则库审查→风险清单→采纳/修改/不采纳→导出修改后合同与审核报告）。
 
 ## 架构（Demo 简化版）
 
 ```
-ezcontract-web (Vue3 + Element Plus + Pinia, :5173)
+faheng-web (Vue3 + Element Plus + Pinia, :5173)
     │ /api 代理
-ezcontract-api (FastAPI, :8000)
+faheng-api (FastAPI, :8000)
     │ OpenAI 兼容接口
 LLM 网关 (aihub.ssturing.com, deepseek-v4-flash)
 ```
@@ -20,7 +22,7 @@ LLM 网关 (aihub.ssturing.com, deepseek-v4-flash)
 
 ```bash
 # 后端（终端 1）
-cd ezcontract-api
+cd faheng-api
 pip install -r requirements.txt      # 首次
 python run.py                        # http://localhost:8000, Swagger: /docs
 
@@ -28,12 +30,12 @@ python run.py                        # http://localhost:8000, Swagger: /docs
 python scripts/make_sample_docx.py
 
 # 前端（终端 2）
-cd ezcontract-web
+cd faheng-web
 npm install                          # 首次
 npm run dev                          # http://localhost:5173
 ```
 
-## 配置（ezcontract-api/.env）
+## 配置（faheng-api/.env）
 
 ```bash
 LLM_BASE_URL=https://aihub.ssturing.com/v1   # 注意必须含 /v1
@@ -53,15 +55,25 @@ LLM_MODEL=deepseek-v4-flash
 
 | 路径 | 说明 |
 |---|---|
-| `ezcontract-api/rules/erp_rules.md` | 审核规则库（26 条，改这个文件即换规则） |
-| `ezcontract-api/app/parser/clause_splitter.py` | 中文合同"第X条"切分（导出回填锚点） |
-| `ezcontract-api/app/llm/client.py` | LLM 结构化输出（清洗/重试/截断抢救） |
-| `ezcontract-api/app/services/docx_export.py` | 导出三路径：docx 就地替换 / PDF 重建 / markdown 转换 |
-| `ezcontract-api/scripts/make_sample_docx.py` | 生成埋坑测试合同 |
-| `ezcontract-web/src/stores/review.js` | 审查工作台状态机（五视图 + 决策乐观更新） |
+| `faheng-api/rules/erp_rules.md` | 审核规则库（26 条，改这个文件即换规则） |
+| `faheng-api/app/parser/clause_splitter.py` | 中文合同"第X条"切分（导出回填锚点） |
+| `faheng-api/app/llm/client.py` | LLM 结构化输出（清洗/重试/截断抢救） |
+| `faheng-api/app/services/docx_export.py` | 导出三路径：docx 就地替换 / PDF 重建 / markdown 转换 |
+| `faheng-api/scripts/make_sample_docx.py` | 生成埋坑测试合同 |
+| `faheng-web/src/stores/review.js` | 审查工作台状态机（五视图 + 决策乐观更新） |
 
 ## 已知限制（Demo 定位）
 
 - 后端重启丢失会话数据（无持久化）
 - PDF 上传导出时为重新排版的 Word（无法保留原版式，页面有提示）
 - 单进程：并发审查会共享内存 session dict
+
+## 后续智能体规划
+
+| 智能体 | 说明 |
+|---|---|
+| 合同起草 ✅ | 已交付 |
+| 合同审查 ✅ | 已交付 |
+| 履约提醒 | LLM 提取合同履约节点 → 定时扫描 → 到期推送 |
+| 会议纪要 | ASR 转文字 → LLM 结构化纪要 |
+| 员工 / 工作内容管理 | CRUD + LLM 辅助字段 |

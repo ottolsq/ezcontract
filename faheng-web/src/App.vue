@@ -7,7 +7,7 @@ const router = useRouter()
 <template>
   <div class="app-shell">
     <header class="top-bar">
-      <span class="brand" @click="router.push('/')">⚖️ 法衡 AI · 智能合同工作台</span>
+      <span class="brand" @click="router.push('/')">⚖️ 法衡 AI · 企业多智能体工作台</span>
       <nav class="nav">
         <router-link to="/draft">合同起草</router-link>
         <router-link to="/review">合同审查</router-link>

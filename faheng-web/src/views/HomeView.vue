@@ -9,25 +9,37 @@ const today = new Date().toLocaleDateString('zh-CN')
   <div class="home">
     <header class="hero">
       <div class="brand">⚖️ 法衡 AI</div>
-      <h1>智能合同工作台</h1>
+      <h1>企业多智能体工作台</h1>
       <p class="lead">
-        覆盖合同起草与风险审查的 AI 辅助闭环 —— AI 负责识别与生成，人负责确认与决策。
+        合同起草、风险审查等企业智能体持续扩展中 —— AI 负责识别与生成，人负责确认与决策。
       </p>
     </header>
 
     <div class="cards">
       <div class="card" @click="router.push('/draft')">
         <div class="card-icon">📝</div>
-        <h2>合同起草</h2>
+        <h2>合同起草智能体</h2>
         <p>输入关键词，AI 生成结构完整的合同模板；在线编辑、对话式修订，一键导出 Word。</p>
         <div class="flow">关键词 → 生成模板 → 调整 → 导出 .docx</div>
       </div>
 
       <div class="card" @click="router.push('/review')">
         <div class="card-icon">🛡️</div>
-        <h2>合同审查</h2>
+        <h2>合同审查智能体</h2>
         <p>上传 PDF / Word 合同，AI 按企业规则库逐条审查；采纳、修改或驳回，导出修改后合同与审核报告。</p>
         <div class="flow">上传 → AI 审查 → 三栏工作台 → 导出</div>
+      </div>
+
+      <div class="card card-coming">
+        <div class="card-icon">🔔</div>
+        <h2>履约提醒 <span class="tag">规划中</span></h2>
+        <p>自动提取付款日、交付日等履约节点，到期前智能提醒。</p>
+      </div>
+
+      <div class="card card-coming">
+        <div class="card-icon">🗒️</div>
+        <h2>会议纪要 <span class="tag">规划中</span></h2>
+        <p>语音转写自动生成结构化纪要，待办事项自动提取。</p>
       </div>
     </div>
 
@@ -85,6 +97,33 @@ h1 {
 .card:hover {
   transform: translateY(-4px);
   box-shadow: 0 14px 36px rgba(36, 89, 169, 0.12);
+}
+
+.card-coming {
+  cursor: default;
+  background: #fafbfd;
+  border-style: dashed;
+}
+
+.card-coming:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.card-coming .card-icon {
+  opacity: 0.5;
+}
+
+.tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 400;
+  color: #9aabbe;
+  background: #f0f4fa;
+  border-radius: 999px;
+  padding: 2px 8px;
+  margin-left: 6px;
+  vertical-align: middle;
 }
 
 .card-icon {

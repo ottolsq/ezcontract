@@ -1,0 +1,94 @@
+/* 全局样式 */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family:
+    Inter,
+    'Microsoft YaHei',
+    'PingFang SC',
+    system-ui,
+    sans-serif;
+  background: #f5f7fb;
+  color: #1d2b4f;
+}
+
+.page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+/* 合同正文纸张样式 */
+.paper {
+  background: #fff;
+  border: 1px solid #e4e9f2;
+  border-radius: 12px;
+  padding: 28px 32px;
+  line-height: 1.9;
+  font-size: 14px;
+}
+
+.paper h2 {
+  text-align: center;
+  margin: 0 0 8px;
+}
+
+.clause-block {
+  margin: 10px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  transition: background 0.2s;
+  white-space: pre-wrap;
+}
+
+.clause-block.active-high {
+  background: #fdecea;
+  box-shadow: inset 3px 0 0 #e74c3c;
+}
+
+.clause-block.active-medium {
+  background: #fef5e7;
+  box-shadow: inset 3px 0 0 #f39c12;
+}
+
+.clause-block.decided {
+  position: relative;
+}
+
+.clause-block.decided::after {
+  content: '✓';
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  color: #27ae60;
+  font-weight: bold;
+}
+
+/* markdown 预览 */
+.md-preview {
+  line-height: 1.8;
+}
+
+.md-preview h1 {
+  font-size: 22px;
+  text-align: center;
+}
+
+.md-preview h2 {
+  font-size: 17px;
+  margin-top: 22px;
+}
+
+.md-preview p {
+  margin: 8px 0;
+}
+
+.md-preview ol,
+.md-preview ul {
+  padding-left: 24px;
+}

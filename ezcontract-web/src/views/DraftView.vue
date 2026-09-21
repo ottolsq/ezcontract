@@ -1,0 +1,207 @@
+<script setup>
+import { computed, ref } from 'vue'
+import { ElMessage } from 'element-plus'
+import MarkdownIt from 'markdown-it'
+import { useDraftStore } from '../stores/draft'
+import { download } from '../api'
+
+const store = useDraftStore()
+const md = new MarkdownIt()
+
+const form = ref({
+  keywords: '',
+  contract_type: '',
+  party_a: '',
+  party_b: '',
+  extra_requirements: '',
+})
+
+const reviseInput = ref('')
+
+const renderedMarkdown = computed(() => md.render(store.markdown))
+
+async function onGenerate() {
+  if (!form.value.keywords.trim()) {
+    ElMessage.warning('请输入合同关键词')
+    return
+  }
+  await store.generate(form.value)
+}
+
+async function onRevise() {
+  if (!reviseInput.value.trim()) {
+    ElMessage.warning('请输入修改要求')
+    return
+  }
+  await store.revise(reviseInput.value)
+  reviseInput.value = ''
+}
+
+async function onExport() {
+  await download(`/draft/${store.draftId}/export`, `${store.title || '合同草稿'}.docx`)
+  ElMessage.success('已导出 Word 文档')
+}
+</script>
+
+<template>
+  <div class="page">
+    <div class="page-head">
+      <h1>合同起草</h1>
+      <el-button v-if="store.draftId" type="primary" @click="onExport">
+        导出 Word
+      </el-button>
+    </div>
+
+    <!-- 表单 -->
+    <el-card v-if="!store.draftId" class="form-card" v-loading="store.loading">
+      <template #header>输入起草需求</template>
+      <el-form label-width="90px">
+        <el-form-item label="关键词" required>
+          <el-input
+            v-model="form.keywords"
+            placeholder="如：ERP软件采购 私有云部署 三年订阅"
+            @keyup.enter="onGenerate"
+          />
+        </el-form-item>
+        <el-form-item label="合同类型">
+          <el-select v-model="form.contract_type" placeholder="自动判断" clearable>
+            <el-option label="采购合同" value="采购合同" />
+            <el-option label="销售合同" value="销售合同" />
+            <el-option label="保密协议（NDA）" value="保密协议" />
+            <el-option label="服务合同" value="服务合同" />
+            <el-option label="劳动合同" value="劳动合同" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="甲方">
+          <el-input v-model="form.party_a" placeholder="留空则使用【甲方名称】占位" />
+        </el-form-item>
+        <el-form-item label="乙方">
+          <el-input v-model="form.party_b" placeholder="留空则使用【乙方名称】占位" />
+        </el-form-item>
+        <el-form-item label="补充要求">
+          <el-input
+            v-model="form.extra_requirements"
+            type="textarea"
+            :rows="3"
+            placeholder="如：重点保护甲方数据安全与退出权利"
+          />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" :loading="store.loading" @click="onGenerate">
+            生成合同模板
+          </el-button>
+        </el-form-item>
+      </el-form>
+    </el-card>
+
+    <!-- 编辑器 -->
+    <template v-else>
+      <div class="editor-layout">
+        <el-card class="editor-pane">
+          <template #header>
+            <div class="pane-head">
+              <span>{{ store.title }}</span>
+              <span class="save-state">
+                {{ store.saved ? '已保存' : '保存中…' }}
+              </span>
+            </div>
+          </template>
+          <el-input
+            :model-value="store.markdown"
+            type="textarea"
+            :rows="28"
+            class="md-editor"
+            @update:model-value="store.updateContent($event)"
+          />
+        </el-card>
+
+        <el-card class="preview-pane">
+          <template #header>预览</template>
+          <div class="md-preview paper" v-html="renderedMarkdown" />
+        </el-card>
+      </div>
+
+      <!-- 修订对话 -->
+      <el-card class="revise-card">
+        <template #header>
+          <div class="pane-head">
+            <span>对话式修订</span>
+            <el-tag v-for="(h, i) in store.history" :key="i" size="small" type="info" class="hist-tag">
+              {{ h.instruction.slice(0, 16) }}
+            </el-tag>
+          </div>
+        </template>
+        <div class="revise-row">
+          <el-input
+            v-model="reviseInput"
+            placeholder="如：把付款方式改为按验收节点分期付款，并增加数据导出协助条款"
+            @keyup.enter="onRevise"
+          />
+          <el-button type="primary" :loading="store.revising" @click="onRevise">
+            AI 修订
+          </el-button>
+        </div>
+      </el-card>
+    </template>
+  </div>
+</template>
+
+<style scoped>
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.form-card {
+  max-width: 640px;
+  margin: 40px auto;
+}
+
+.editor-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.save-state {
+  font-size: 12px;
+  color: #27ae60;
+}
+
+.md-editor :deep(textarea) {
+  font-family: Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.revise-card {
+  margin-top: 16px;
+}
+
+.revise-row {
+  display: flex;
+  gap: 10px;
+}
+
+.hist-tag {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+</style>

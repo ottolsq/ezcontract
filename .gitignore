@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node
+node_modules/
+dist/
+
+# 环境与密钥
+.env
+*.env.local
+
+# 运行时数据
+ezcontract-api/data/uploads/
+ezcontract-api/data/exports/
+ezcontract-api/data/*.docx
+
+# IDE / 系统
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db

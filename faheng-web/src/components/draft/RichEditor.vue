@@ -22,7 +22,7 @@ const editor = useEditor({
   content: '',
   extensions: [
     StarterKit.configure({
-      heading: { levels: [1, 2] },
+      heading: { levels: [1, 2, 3] },
     }),
     TextAlign.configure({ types: ['heading', 'paragraph'] }),
     Table.configure({ resizable: false, HTMLAttributes: { class: 'docx-table' } }),
@@ -242,6 +242,8 @@ function isActive(name, attrs = undefined) {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  height: auto;
+  min-height: 100%;
 }
 
 .toolbar {
@@ -253,9 +255,7 @@ function isActive(name, attrs = undefined) {
   border: 1px solid #e4e9f2;
   border-radius: 8px;
   background: #fafbfd;
-  position: sticky;
-  top: 56px;
-  z-index: 5;
+  flex-shrink: 0;
 }
 
 .tb-btn {
@@ -296,6 +296,7 @@ function isActive(name, attrs = undefined) {
 .page-frame {
   display: flex;
   justify-content: center;
+  padding: 12px 0 24px;
 }
 
 .docx-page {
@@ -307,16 +308,16 @@ function isActive(name, attrs = undefined) {
   border: 1px solid #e4e9f2;
   border-radius: 6px;
   box-shadow: 0 6px 20px rgba(36, 89, 169, 0.08);
-  font-family: '仿宋_GB2312', '仿宋', 'Times New Roman', serif;
+  font-family: '仿宋', '仿宋_GB2312', 'Times New Roman', serif;
   font-size: 12pt;
   line-height: 1.5;
   color: #000;
   outline: none;
+  overflow: visible;
 }
 
 :deep(.docx-prose) {
   outline: none;
-  min-height: calc(297mm - 56mm);
 }
 
 :deep(.docx-prose p) {
@@ -325,7 +326,7 @@ function isActive(name, attrs = undefined) {
 }
 
 :deep(.docx-prose h1) {
-  font-family: '方正小标宋简体', '黑体', 'Times New Roman', serif;
+  font-family: '黑体', '仿宋', 'Times New Roman', serif;
   font-size: 22pt;
   text-align: center;
   font-weight: bold;
@@ -338,6 +339,15 @@ function isActive(name, attrs = undefined) {
   font-size: 14pt;
   font-weight: bold;
   margin: 18px 0 10px;
+  text-indent: 0;
+}
+
+:deep(.docx-prose h3) {
+  font-family: '黑体', 'Times New Roman', serif;
+  font-size: 12pt;
+  font-weight: bold;
+  margin: 8px 0 6px;
+  padding-left: 2em;
   text-indent: 0;
 }
 

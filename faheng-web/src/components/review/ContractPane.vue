@@ -42,15 +42,30 @@ defineExpose({ scrollToClause })
                 ['accepted', 'modified'].includes(store.decisions[r.risk_id]?.type),
             ),
           }"
-        >
-          {{ c.text }}
-        </div>
+          v-html="c.html || c.text"
+        />
       </article>
     </div>
   </el-card>
 </template>
 
 <style scoped>
+.contract-pane {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.contract-pane :deep(.el-card__body) {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .head {
   display: flex;
   align-items: center;
@@ -68,8 +83,10 @@ defineExpose({ scrollToClause })
 }
 
 .doc-scroll {
-  max-height: 620px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  padding: 16px;
 }
 
 .hidden {

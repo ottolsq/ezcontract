@@ -140,11 +140,20 @@ async function onExport() {
 </template>
 
 <style scoped>
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 16px 24px;
+}
+
 .page-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 18px;
+  flex-shrink: 0;
 }
 
 h1 {
@@ -153,7 +162,8 @@ h1 {
 }
 
 .form-card {
-  max-width: 640px;
+  width: 100%;
+  max-width: 760px;
   margin: 40px auto;
 }
 
@@ -175,7 +185,24 @@ h1 {
 }
 
 .editor-pane {
-  margin-bottom: 16px;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 14px;
+}
+
+.editor-pane :deep(.el-card__body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  overflow: auto;
+}
+
+.revise-card {
+  flex-shrink: 0;
 }
 
 .revise-row {

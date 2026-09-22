@@ -77,23 +77,34 @@ async function exportReport() {
 </template>
 
 <style scoped>
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 16px 24px;
+}
+
 .page-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
+  flex-shrink: 0;
 }
 
 h1 {
   margin: 0;
-  font-size: 24px;
+  font-size: 22px;
 }
 
 .workspace {
+  flex: 1;
+  min-height: 0;
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr) 360px;
   gap: 14px;
-  align-items: start;
+  align-items: stretch;
 }
 
 @media (max-width: 1100px) {

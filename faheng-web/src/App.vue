@@ -1,10 +1,14 @@
 <script setup>
-import { useRouter } from 'vue-router'
+import { computed } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from './stores/auth'
 
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
+
+const isFullscreen = computed(() => Boolean(route.meta.fullscreen))
 
 async function onLogout() {
   await auth.logout()
@@ -37,7 +41,7 @@ async function onLogout() {
       </div>
     </header>
 
-    <main class="app-main">
+    <main :class="['app-main', { 'app-main--full': isFullscreen }]">
       <router-view />
     </main>
   </div>
@@ -62,7 +66,18 @@ async function onLogout() {
 }
 
 .app-main {
+  height: calc(100vh - 56px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 全屏路由（如 /login）：绕过固定高度，由子页面自己撑满剩余视口 */
+.app-main--full {
+  height: auto;
   min-height: calc(100vh - 56px);
+  overflow: visible;
+  display: block;
 }
 
 .brand {

@@ -21,6 +21,7 @@ body {
   max-width: 1600px;
   margin: 0 auto;
   padding: 24px;
+  width: 100%;
 }
 
 /* 合同正文纸张样式 */
@@ -43,7 +44,12 @@ body {
   padding: 8px 10px;
   border-radius: 8px;
   transition: background 0.2s;
-  white-space: pre-wrap;
+}
+
+.clause-block p {
+  margin: 6px 0;
+  line-height: 1.9;
+  white-space: normal;
 }
 
 .clause-block.active-high {

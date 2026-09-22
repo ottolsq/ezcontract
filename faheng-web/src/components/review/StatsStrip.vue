@@ -36,7 +36,8 @@ const levelColor = { high: '#e74c3c', medium: '#f39c12', low: '#3498db' }
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 12px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
+  flex-shrink: 0;
 }
 
 .metric {

@@ -103,6 +103,7 @@ async function onUndo() {
       </el-tag>
     </div>
 
+    <div class="opinion-body">
     <div class="section">
       <div class="label">风险说明</div>
       <div>{{ risk.issue }}</div>
@@ -158,6 +159,7 @@ async function onUndo() {
       </template>
       <el-button link size="small" @click="onUndo">撤销决策</el-button>
     </el-alert>
+    </div>
   </el-card>
 
   <el-card v-else shadow="never">
@@ -166,6 +168,35 @@ async function onUndo() {
 </template>
 
 <style scoped>
+.opinion-pane {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.opinion-pane :deep(.el-card__body) {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.opinion-pane :deep(.el-card__body) > .severity,
+.opinion-pane :deep(.el-card__body) > .risk-title,
+.opinion-pane :deep(.el-card__body) > .rules,
+.opinion-pane :deep(.el-card__body) > .decision-actions,
+.opinion-pane :deep(.el-card__body) > .decision-status {
+  flex-shrink: 0;
+}
+
+.opinion-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .head {
   display: flex;
   align-items: center;

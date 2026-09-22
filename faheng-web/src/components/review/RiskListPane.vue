@@ -92,6 +92,21 @@ const pendingByLevel = computed(
 </template>
 
 <style scoped>
+.risk-pane {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.risk-pane :deep(.el-card__body) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .head {
   display: flex;
   align-items: center;
@@ -105,7 +120,8 @@ const pendingByLevel = computed(
 }
 
 .list {
-  max-height: 520px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 

@@ -17,6 +17,13 @@ faheng-api/data/uploads/
 faheng-api/data/exports/
 faheng-api/data/*.docx
 
+# 临时数据 / 调试 / 笔记
+data/
+exmple/
+faheng-web/sample.json
+faheng-web/upload.json
+生成、导出word保真方案.md
+
 # IDE / 系统
 .idea/
 .vscode/

@@ -13,6 +13,7 @@ class Clause(BaseModel):
     clause_no: str  # "第五条"（原文编号，展示用）
     title: str = ""  # 条款标题（如"第五条 合同金额与支付"取后半段）
     text: str  # 完整条款文本（多段落拼合）
+    html: str = ""  # 包含原段落样式的安全 HTML，供前端展示用
     start_idx: int  # docx 段落起始下标（PDF 时为行号）
     end_idx: int  # 段落结束下标（含）
 

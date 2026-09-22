@@ -56,7 +56,7 @@ async def save_upload(file: UploadFile) -> ReviewSession:
         upload_path.unlink(missing_ok=True)
         raise HTTPException(400, f"文件解析失败：{e}")
 
-    clauses, preamble_lines, tail_lines = split_clauses(lines)
+    clauses, preamble, tail = split_clauses(lines)
     if not clauses:
         upload_path.unlink(missing_ok=True)
         raise HTTPException(400, "未能在文档中识别出任何条款内容")
@@ -67,10 +67,10 @@ async def save_upload(file: UploadFile) -> ReviewSession:
         file_type=ext.lstrip("."),
         upload_path=str(upload_path),
         clauses=clauses,
-        preamble_text="\n".join(preamble_lines),
-        tail_text="\n".join(tail_lines),
-        preamble_lines=preamble_lines,
-        tail_lines=tail_lines,
+        preamble_text="\n".join(p.text for p in preamble),
+        tail_text="\n".join(p.text for p in tail),
+        preamble_lines=[p.text for p in preamble],
+        tail_lines=[p.text for p in tail],
     )
     return session
 

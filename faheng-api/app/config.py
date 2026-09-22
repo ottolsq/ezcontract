@@ -38,6 +38,12 @@ class Settings:
     SCORE_HIGH_WEIGHT: int = 15
     SCORE_MEDIUM_WEIGHT: int = 7
 
+    # 演示账号（Demo 定位：单账号，不做用户表/哈希；改密码改 .env 即可）
+    DEMO_USERNAME: str = os.getenv("DEMO_USERNAME", "admin")
+    DEMO_PASSWORD: str = os.getenv("DEMO_PASSWORD", "faheng2024")
+    # 演示 token 有效期（秒）—— 进程内存白名单，重启后失效需重新登录
+    AUTH_TOKEN_TTL: int = int(os.getenv("AUTH_TOKEN_TTL", "86400"))
+
     def ensure_dirs(self) -> None:
         self.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
         self.EXPORT_DIR.mkdir(parents=True, exist_ok=True)

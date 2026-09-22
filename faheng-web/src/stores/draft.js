@@ -52,5 +52,17 @@ export const useDraftStore = defineStore('draft', {
         this.saved = true
       }, 800)
     },
+
+    /**
+     * 导出 Word。
+     * @param {string} title 文件名（不含扩展名）
+     * @param {string} [html] 当前 TipTap 的 HTML；传入则走 HTML 高保真导出
+     */
+    async exportDocx(title, html) {
+      const safeTitle = (title || '合同草稿').slice(0, 30)
+      const payload = html && html.trim() ? { html } : null
+      const { download } = await import('../api')
+      await download(`/draft/${this.draftId}/export`, `${safeTitle}.docx`, payload)
+    },
   },
 })

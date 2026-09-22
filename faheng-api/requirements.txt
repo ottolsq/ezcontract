@@ -7,3 +7,4 @@ openai==3.16.2
 pdfplumber==0.11.10
 python-multipart==0.0.32
 httpx==2.13.0
+beautifulsoup4==4.12.3

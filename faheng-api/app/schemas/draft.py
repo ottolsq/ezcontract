@@ -27,6 +27,12 @@ class ContentIn(BaseModel):
     markdown: str
 
 
+class ExportIn(BaseModel):
+    """导出请求体：前端 TipTap 的 HTML（可选）；不传则降级走 markdown 导出"""
+
+    html: str | None = None
+
+
 class HistoryItem(BaseModel):
     instruction: str
     result_title: str = ""

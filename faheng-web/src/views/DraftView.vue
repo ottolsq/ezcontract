@@ -1,13 +1,12 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import MarkdownIt from 'markdown-it'
 import { useDraftStore } from '../stores/draft'
-import { download } from '../api'
+import RichEditor from '../components/draft/RichEditor.vue'
 
 const store = useDraftStore()
-const md = new MarkdownIt()
 
+const editorRef = ref(null)
 const form = ref({
   keywords: '',
   contract_type: '',
@@ -17,8 +16,6 @@ const form = ref({
 })
 
 const reviseInput = ref('')
-
-const renderedMarkdown = computed(() => md.render(store.markdown))
 
 async function onGenerate() {
   if (!form.value.keywords.trim()) {
@@ -38,8 +35,13 @@ async function onRevise() {
 }
 
 async function onExport() {
-  await download(`/draft/${store.draftId}/export`, `${store.title || '合同草稿'}.docx`)
-  ElMessage.success('已导出 Word 文档')
+  const html = editorRef.value?.getHtml?.() ?? ''
+  try {
+    await store.exportDocx(store.title || '合同草稿', html)
+    ElMessage.success('已导出 Word 文档')
+  } catch (e) {
+    // 拦截器已提示错误，这里静默
+  }
 }
 </script>
 
@@ -94,32 +96,23 @@ async function onExport() {
       </el-form>
     </el-card>
 
-    <!-- 编辑器 -->
+    <!-- 编辑器（单栏 WYSIWYG） -->
     <template v-else>
-      <div class="editor-layout">
-        <el-card class="editor-pane">
-          <template #header>
-            <div class="pane-head">
-              <span>{{ store.title }}</span>
-              <span class="save-state">
-                {{ store.saved ? '已保存' : '保存中…' }}
-              </span>
-            </div>
-          </template>
-          <el-input
-            :model-value="store.markdown"
-            type="textarea"
-            :rows="28"
-            class="md-editor"
-            @update:model-value="store.updateContent($event)"
-          />
-        </el-card>
-
-        <el-card class="preview-pane">
-          <template #header>预览</template>
-          <div class="md-preview paper" v-html="renderedMarkdown" />
-        </el-card>
-      </div>
+      <el-card class="editor-pane">
+        <template #header>
+          <div class="pane-head">
+            <span>{{ store.title }}</span>
+            <span class="save-state" :class="{ saving: !store.saved }">
+              {{ store.saved ? '已保存' : '保存中…' }}
+            </span>
+          </div>
+        </template>
+        <RichEditor
+          ref="editorRef"
+          :model-value="store.markdown"
+          @update:model-value="store.updateContent($event)"
+        />
+      </el-card>
 
       <!-- 修订对话 -->
       <el-card class="revise-card">
@@ -164,12 +157,6 @@ h1 {
   margin: 40px auto;
 }
 
-.editor-layout {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
 .pane-head {
   display: flex;
   align-items: center;
@@ -183,14 +170,12 @@ h1 {
   color: #27ae60;
 }
 
-.md-editor :deep(textarea) {
-  font-family: Consolas, monospace;
-  font-size: 13px;
-  line-height: 1.7;
+.save-state.saving {
+  color: #f39c12;
 }
 
-.revise-card {
-  margin-top: 16px;
+.editor-pane {
+  margin-bottom: 16px;
 }
 
 .revise-row {

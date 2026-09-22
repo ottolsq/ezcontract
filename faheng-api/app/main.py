@@ -1,10 +1,10 @@
 """法衡 AI · 企业多智能体工作台 — API 入口（Demo）"""
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.llm.client import chat_text
-from app.routers import draft, review
+from app.routers import auth, draft, review
 
 app = FastAPI(title="法衡 AI 企业多智能体工作台 API (Demo)", version="0.1.0")
 
@@ -16,8 +16,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(review.router)
-app.include_router(draft.router)
+# 业务路由全部走 token 校验；登录接口本身无需校验
+app.include_router(auth.router)
+app.include_router(review.router, dependencies=[Depends(auth.require_auth)])
+app.include_router(draft.router, dependencies=[Depends(auth.require_auth)])
 
 
 @app.get("/api/health")

@@ -9,7 +9,7 @@ from app.config import settings
 from app.llm.client import LLMFormatError, chat_json, chat_text
 from app.llm.prompts import build_draft_prompt, build_revise_prompt
 from app.schemas.draft import DraftGenerateIn, DraftLLMOut, DraftSession
-from app.services.docx_export import export_markdown_docx
+from app.services.docx_export import export_html_docx, export_markdown_docx
 
 
 def new_draft_id() -> str:
@@ -125,7 +125,9 @@ async def revise_draft(session: DraftSession, instruction: str) -> DraftSession:
     return session
 
 
-def export_draft_docx(session: DraftSession) -> "Path":
+def export_draft_docx(session: DraftSession, *, html: str | None = None) -> "Path":
     safe_title = session.title.strip() or "合同草稿"
     out_name = f"{session.id}_{safe_title[:30]}.docx"
+    if html and html.strip():
+        return export_html_docx(session.title, html, out_name)
     return export_markdown_docx(session.title, session.markdown, out_name)

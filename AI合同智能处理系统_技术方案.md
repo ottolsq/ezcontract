@@ -390,6 +390,18 @@ docker ps
 2. **PDF 上传 → 重建降级**：无法保真转 docx，用切分结果重建干净 Word（页面明示"重新排版导出"）
 3. **起草 Markdown → docx 轻量转换**（标题/粗体/列表，显式设置中文字体 w:eastAsia）
 
+### 9.5 起草导出：HTML→docx 保真转换（升级方案）
+
+为让"导出 Word = 前端 A4 纸所见"，把 Markdown 仅作为保存/AI 修订的真相源，导出这一刻把 TipTap 的 HTML 一起 POST 给后端：
+
+- 前端 `defineExpose({ getHtml })` 暴露 `editor.getHTML()`；
+- `DraftView.vue` 的 `onExport` 取 HTML 调导出接口（body 含 `{ html }`）；
+- 后端 `schemas/draft.py` 新增 `ExportIn(html?: str)`，service 优先走 `export_html_docx`，未传 HTML 回退原 markdown 路径；
+- 后端 `export_html_docx` 用 BeautifulSoup 按前端 `.docx-prose` CSS 严格映射：h1=22pt 居中、h2=14pt 黑体、h3=12pt 黑体、p=12pt 仿宋首行缩进 2 字符、ul/ol=列表缩进 2em、table=A4 可用宽度固定、strong/em/u 映射 run 的 bold/italic/underline；
+- 行内节点用 `deepcopy` 复制原节点链到新 `<p>`，避免 `<strong>` 等标签字面化进 docx；
+- 多行 `<p>`（含 `<br>`）按行切分后按 `_classify_line` 派发：`h2/h3` → 标题、`p`（甲方/乙方/鉴于行）→ 段落、纯文本 → 段落，兜底按段落处理；
+- 页边距与前端 A4 纸 CSS 的 `28mm 25mm` 一致（上下 2.8cm、左右 2.5cm）。
+
 ---
 
 ## 十、需求备忘与后续规划

@@ -49,7 +49,7 @@ LLM_MODEL=deepseek-v4-flash
 
 **审查**：/review → 载入测试合同（19 条款，全部命中规则库）→ 开始 AI 审查（约 1-2 分钟）→ 三栏工作台（风险清单 | 合同正文高亮 | 法务意见）→ 逐项 采纳/修改/不采纳 → 审核报告 → 导出修改后合同（被替换条款黄色高亮，版式保留）
 
-**起草**：/draft → 关键词（如"ERP软件采购 私有云部署 三年订阅"）→ 生成（1-2 分钟）→ 左右分栏编辑/预览 → 对话式修订 → 导出 Word
+**起草**：/draft → 关键词（如"ERP软件采购 私有云部署 三年订阅"）→ 生成（1-2 分钟）→ 单栏 TipTap WYSIWYG 编辑器（A4 纸预览 + 工具栏：B/I/H1/H2/P/列表/表格/对齐/撤销重做）→ 对话式修订 → 导出 Word（前端 HTML → 后端 HTML→docx 保真转换，版式与页面所见一致）
 
 ## 目录要点
 
@@ -58,7 +58,7 @@ LLM_MODEL=deepseek-v4-flash
 | `faheng-api/rules/erp_rules.md` | 审核规则库（26 条，改这个文件即换规则） |
 | `faheng-api/app/parser/clause_splitter.py` | 中文合同"第X条"切分（导出回填锚点） |
 | `faheng-api/app/llm/client.py` | LLM 结构化输出（清洗/重试/截断抢救） |
-| `faheng-api/app/services/docx_export.py` | 导出三路径：docx 就地替换 / PDF 重建 / markdown 转换 |
+| `faheng-api/app/services/docx_export.py` | 导出三路径：docx 就地替换 / PDF 重建 / HTML→docx 保真转换（前端 WYSIWYG 导出） |
 | `faheng-api/scripts/make_sample_docx.py` | 生成埋坑测试合同 |
 | `faheng-web/src/stores/review.js` | 审查工作台状态机（五视图 + 决策乐观更新） |
 

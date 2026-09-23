@@ -13,7 +13,7 @@ import io
 import re
 from copy import deepcopy
 
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_COLOR_INDEX, WD_LINE_SPACING
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt
 from bs4 import BeautifulSoup
@@ -25,14 +25,10 @@ from app.schemas.review import ReviewSession
 # 正文字体（本机实际安装：仿宋 simfang.ttf，无 仿宋_GB2312）
 _BODY_FONT_SIZE = Pt(12)        # 小四
 _BODY_FONT_NAME = "仿宋"
-_BODY_FONT_FALLBACK = "仿宋"
 # 标题字体（本机实际安装：黑体 simhei.ttf，无 方正小标宋）
 _TITLE_FONT_NAME = "黑体"
-_TITLE_FONT_FALLBACK = "黑体"
 _HEADING_FONT_NAME = "黑体"
 _LINE_SPACING = 1.5
-# A4 可用宽度（约 21cm - 左 2.5 - 右 2.5 = 16cm），导出表格宽度参考
-_TABLE_WIDTH = Cm(16.0)
 
 
 def _apply_page_setup(doc) -> None:
@@ -100,17 +96,6 @@ def _set_east_asia(run, font_name: str = _BODY_FONT_NAME) -> None:
     _style_run(run, ea=font_name)
 
 
-def _new_paragraph_after(anchor_paragraph, text: str):
-    """在锚段落后插入一个同格式段落（deepcopy XML，改文本）"""
-    from docx.text.paragraph import Paragraph
-
-    new_p = deepcopy(anchor_paragraph._p)
-    anchor_paragraph._p.addnext(new_p)
-    para = Paragraph(new_p, anchor_paragraph._parent)
-    _replace_paragraph_text(para, text)
-    return para
-
-
 def _replace_paragraph_text(paragraph, text: str) -> None:
     """保样式替换段落文本：保留首 run 的字体属性，清空其余 run"""
     runs = paragraph.runs
@@ -123,10 +108,24 @@ def _replace_paragraph_text(paragraph, text: str) -> None:
         _set_east_asia(run)
 
 
-def _highlight(paragraph) -> None:
-    for r in paragraph.runs:
-        if r.text.strip():
-            r.font.highlight_color = WD_COLOR_INDEX.YELLOW
+# ---------- 段落级相似度匹配（导出回填用） ----------
+
+
+def _strip_for_similarity(s: str) -> str:
+    """去掉标点和空白，仅保留中英文字符，方便做相似度比对。"""
+    import re as _re
+
+    return _re.sub(r"[\s　，,。.；;：:！!？?()（）【】\[\]<>《》""'']", "", s).lower()
+
+
+def _paragraph_similarity(a: str, b: str) -> float:
+    """字符级 Jaccard 相似度。空文本视为 0。"""
+    sa = set(_strip_for_similarity(a))
+    sb = set(_strip_for_similarity(b))
+    if not sa or not sb:
+        return 0.0
+    inter = sum(1 for c in sa if c in sb)
+    return inter / (len(sa) + len(sb) - inter)
 
 
 # ---------- 路径①：DOCX 就地替换 ----------
@@ -159,38 +158,49 @@ def _decided_replacements(session: ReviewSession) -> dict[str, list[str]]:
 
 
 def _replace_clause_span(doc, session: ReviewSession) -> None:
-    """把决策后的替换文本写回 docx 原件（只动命中条款的段落区间）"""
+    """把决策后的替换文本写回 docx 原件（段落级粒度：只动命中条款的相似段落）。
+
+    旧实现会把条款区间 [start_idx+1, end_idx] 整段删除后整体覆盖；
+    现改为：对每个 decision 的替换段落（按 \\n 切），在条款原段落集合中找相似度最高的
+    一段就地替换，保留其余原段落。这样采纳/修改只动真正被改的子项，不会把整条款覆盖。
+    """
     clause_map = {c.clause_id: c for c in session.clauses}
     replacements = _decided_replacements(session)
 
-    # 收集需要删除的段落区间（先记录元素引用，避免索引位移）
-    to_delete: list = []
+    paras = doc.paragraphs
     for cid, new_texts in replacements.items():
         clause = clause_map[cid]
-        paras = doc.paragraphs
-        first = paras[clause.start_idx]
-
-        lines = [l for l in "\n".join(new_texts).splitlines() if l.strip()]
-        if not lines:
+        # 该条款对应的原段落区间（闭区间）
+        clause_paras = paras[clause.start_idx : clause.end_idx + 1]
+        # 收集非空原段落作为匹配候选（与下标绑定）
+        candidates: list[tuple[int, "Paragraph"]] = [
+            (i, p) for i, p in enumerate(clause_paras) if p.text.strip()
+        ]
+        if not candidates:
             continue
 
-        # 首段：保样式改文本 + 高亮
-        _replace_paragraph_text(first, lines[0])
-        _highlight(first)
+        used_idx: set[int] = set()
+        # 对每条新段落（按行切）找一个最相似的原段落就地改写
+        flat_lines: list[str] = []
+        for nt in new_texts:
+            flat_lines.extend(l for l in nt.splitlines() if l.strip())
 
-        # 区间内其余段落标记删除
-        for p in paras[clause.start_idx + 1 : clause.end_idx + 1]:
-            to_delete.append(p._p)
-
-        # 追加段落（倒序插在 first 之后，保持顺序）——注意要在删除之前基于 XML 插入
-        anchor = first
-        for extra in lines[1:]:
-            anchor = _new_paragraph_after(anchor, extra)
-            _highlight(anchor)
-
-    # 统一删除旧段落
-    for el in to_delete:
-        el.getparent().remove(el)
+        for line in flat_lines:
+            best_pos = -1
+            best_score = 0.0
+            for pos, (orig_pos, p) in enumerate(candidates):
+                if orig_pos in used_idx:
+                    continue
+                s = _paragraph_similarity(p.text, line)
+                if s > best_score:
+                    best_score = s
+                    best_pos = pos
+            # 阈值 0.25：太弱视为新增段落，跳过（不追加到条款末尾以免污染后续条款）
+            if best_score < 0.25 or best_pos < 0:
+                continue
+            orig_pos, target_para = candidates[best_pos]
+            used_idx.add(orig_pos)
+            _replace_paragraph_text(target_para, line)
 
 
 def export_docx_inplace(session: ReviewSession) -> io.BytesIO:
@@ -215,7 +225,6 @@ def _build_rebuilt_docx(session: ReviewSession) -> "object":
     from docx.enum.text import WD_ALIGN_PARAGRAPH
 
     doc = Document()
-    clause_map = {c.clause_id: c for c in session.clauses}
     replacements = _decided_replacements(session)
 
     # 标题（preamble 第一行）
@@ -233,14 +242,13 @@ def _build_rebuilt_docx(session: ReviewSession) -> "object":
         run = p.add_run(line)
         _set_east_asia(run)
 
-    # 条款（应用替换 + 高亮）
+    # 条款（应用替换；段落级粒度，PDF 路径无原段落锚点故只替换首段 + 追加多段，无高亮）
     for c in session.clauses:
         new_texts = replacements.get(c.clause_id)
         if new_texts:
             for line in [l for l in "\n".join(new_texts).splitlines() if l.strip()]:
                 p = doc.add_paragraph()
                 run = p.add_run(line)
-                run.font.highlight_color = WD_COLOR_INDEX.YELLOW
                 _set_east_asia(run)
         else:
             for line in c.text.splitlines():

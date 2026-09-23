@@ -24,35 +24,35 @@ const pendingByLevel = computed(
       </div>
     </template>
 
-    <!-- 等级过滤 -->
-    <div class="filters">
+    <!-- 等级过滤（红/橙色系：风险语义） -->
+    <div class="filters level-row">
       <el-button
-        :type="store.filters.level === 'high' ? 'primary' : ''"
-        size="small"
+        :type="store.filters.level === 'high' ? 'danger' : ''"
+        class="filter-btn"
         @click="store.filters.level = 'high'"
       >
         高风险（{{ store.stats.high }}）
       </el-button>
       <el-button
-        :type="store.filters.level === 'medium' ? 'primary' : ''"
-        size="small"
+        :type="store.filters.level === 'medium' ? 'warning' : ''"
+        class="filter-btn"
         @click="store.filters.level = 'medium'"
       >
         中风险（{{ store.stats.medium }}）
       </el-button>
     </div>
-    <!-- 状态过滤 -->
-    <div class="filters">
+    <!-- 状态过滤（蓝/绿色系：与风险色区分） -->
+    <div class="filters status-row">
       <el-button
         :type="store.filters.status === 'pending' ? 'primary' : ''"
-        size="small"
+        class="filter-btn"
         @click="store.filters.status = 'pending'"
       >
         待处理（{{ pendingByLevel(store.filters.level) }}）
       </el-button>
       <el-button
-        :type="store.filters.status === 'processed' ? 'primary' : ''"
-        size="small"
+        :type="store.filters.status === 'processed' ? 'success' : ''"
+        class="filter-btn"
         @click="store.filters.status = 'processed'"
       >
         已处理
@@ -117,6 +117,14 @@ const pendingByLevel = computed(
   display: flex;
   gap: 6px;
   margin-bottom: 8px;
+}
+
+.filters .filter-btn {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .list {

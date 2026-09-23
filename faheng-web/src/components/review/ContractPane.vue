@@ -8,9 +8,13 @@ const scrollEl = ref(null)
 /** 暴露给父组件：滚动到指定条款 */
 function scrollToClause(clauseId) {
   const el = document.getElementById(`clause-${clauseId}`)
-  if (el && scrollEl.value) {
-    scrollEl.value.scrollTo({ top: el.offsetTop - 60, behavior: 'smooth' })
-  }
+  if (!el || !scrollEl.value) return
+  // 用 getBoundingClientRect 算相对滚动容器的偏移，避免 offsetTop 跳到错误的 offsetParent
+  const containerRect = scrollEl.value.getBoundingClientRect()
+  const elRect = el.getBoundingClientRect()
+  // 把目标条款顶端对齐到容器内"头部 16px"位置，预留 paper 内顶部留白让高亮不被切
+  const offset = elRect.top - containerRect.top + scrollEl.value.scrollTop - 16
+  scrollEl.value.scrollTo({ top: offset, behavior: 'smooth' })
 }
 
 defineExpose({ scrollToClause })

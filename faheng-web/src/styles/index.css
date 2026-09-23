@@ -75,6 +75,15 @@ body {
   font-weight: bold;
 }
 
+/* 被替换段落（采纳/修改后落地）：仅框住被改的段落，绿框 + 浅绿底 */
+.clause-block :deep(p.replaced) {
+  background: #e8f8f2;
+  border-left: 3px solid #27ae60;
+  border-radius: 4px;
+  margin: 6px 0;
+  padding: 4px 8px;
+}
+
 /* markdown 预览 */
 .md-preview {
   line-height: 1.8;

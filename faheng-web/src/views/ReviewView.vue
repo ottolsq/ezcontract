@@ -89,7 +89,9 @@ async function exportReport() {
         description="平台不会保留您的合同或审核报告，导出后请及时下载并保存到本地，避免丢失。"
         class="download-notice"
       />
-      <ReportPanel />
+      <div class="report-scroll">
+        <ReportPanel />
+      </div>
     </template>
   </div>
 </template>
@@ -144,5 +146,12 @@ h1 {
 
 .download-notice :deep(.el-alert__title) {
   font-weight: 600;
+}
+
+.report-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 </style>

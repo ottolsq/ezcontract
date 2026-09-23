@@ -70,6 +70,9 @@ class ReviewSession(BaseModel):
     # PDF 重建导出用：preamble/tail 的行列表
     preamble_lines: list[str] = []
     tail_lines: list[str] = []
+    # 前端富文本展示用：preamble/tail 的安全 HTML（含原 docx 段落样式）
+    preamble_html: str = ""
+    tail_html: str = ""
 
     # 原始上传字节（DOCX 就地替换导出仍需打开原件；无状态化下保留在 session 内存中）
     upload_bytes: bytes | None = None

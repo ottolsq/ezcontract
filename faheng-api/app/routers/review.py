@@ -29,6 +29,8 @@ async def upload(file: UploadFile):
         "file_type": session.file_type,
         "clause_count": len(session.clauses),
         "clauses": [c.model_dump() for c in session.clauses],
+        "preamble_html": session.preamble_html,
+        "tail_html": session.tail_html,
     }
 
 
@@ -59,6 +61,8 @@ async def upload_sample():
         "file_type": session.file_type,
         "clause_count": len(session.clauses),
         "clauses": [c.model_dump() for c in session.clauses],
+        "preamble_html": session.preamble_html,
+        "tail_html": session.tail_html,
     }
 
 
@@ -105,6 +109,8 @@ async def result(review_id: str):
             "low": sum(1 for r in session.risks if r.level == "low"),
         },
         "clauses": [c.model_dump() for c in session.clauses],
+        "preamble_html": session.preamble_html,
+        "tail_html": session.tail_html,
         "decisions": {k: v.model_dump() for k, v in session.decisions.items()},
         "truncated_salvaged": session.truncated_salvaged,
     }

@@ -9,6 +9,8 @@ export const useReviewStore = defineStore('review', {
     filename: '',
     fileType: '',
     clauses: [],
+    preambleHtml: '',
+    tailHtml: '',
     risks: [],
     decisions: {}, // risk_id -> { type, text, reason }
     score: 0,
@@ -50,6 +52,8 @@ export const useReviewStore = defineStore('review', {
       this.filename = data.filename
       this.fileType = data.file_type
       this.clauses = data.clauses
+      this.preambleHtml = data.preamble_html || ''
+      this.tailHtml = data.tail_html || ''
       this.phase = 'uploaded'
     },
 
@@ -60,6 +64,8 @@ export const useReviewStore = defineStore('review', {
       this.filename = data.filename
       this.fileType = data.file_type
       this.clauses = data.clauses
+      this.preambleHtml = data.preamble_html || ''
+      this.tailHtml = data.tail_html || ''
       this.phase = 'uploaded'
     },
 
@@ -98,6 +104,10 @@ export const useReviewStore = defineStore('review', {
       this.score = data.score
       this.decisions = data.decisions || {}
       this.truncatedSalvaged = data.truncated_salvaged
+      // 服务端可能刷新内存（重载场景），同步一次最新的条款/前后页
+      if (data.clauses) this.clauses = data.clauses
+      if (data.preamble_html != null) this.preambleHtml = data.preamble_html
+      if (data.tail_html != null) this.tailHtml = data.tail_html
       // 默认选中第一个可见风险
       this.filters.level = this.stats.high > 0 ? 'high' : 'medium'
       this.filters.status = 'pending'

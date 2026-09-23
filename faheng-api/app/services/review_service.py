@@ -67,6 +67,8 @@ async def save_upload(file: UploadFile) -> ReviewSession:
         tail_text="\n".join(p.text for p in tail),
         preamble_lines=[p.text for p in preamble],
         tail_lines=[p.text for p in tail],
+        preamble_html="".join(p.html for p in preamble),
+        tail_html="".join(p.html for p in tail),
         upload_bytes=content,  # DOCX 就地替换导出仍需打开原件，留在 session 内存里
     )
     return session

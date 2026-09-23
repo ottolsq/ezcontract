@@ -22,7 +22,7 @@ const editor = useEditor({
   content: '',
   extensions: [
     StarterKit.configure({
-      heading: { levels: [1, 2, 3] },
+      heading: { levels: [1, 2, 3, 4] },
     }),
     TextAlign.configure({ types: ['heading', 'paragraph'] }),
     Table.configure({ resizable: false, HTMLAttributes: { class: 'docx-table' } }),
@@ -141,10 +141,28 @@ function isActive(name, attrs = undefined) {
         type="button"
         class="tb-btn"
         :class="{ active: isActive('heading', { level: 2 }) }"
-        title="一级标题"
+        title="一级标题（第X条）"
         @click="actions.setHeading(2)"
       >
         H2
+      </button>
+      <button
+        type="button"
+        class="tb-btn"
+        :class="{ active: isActive('heading', { level: 3 }) }"
+        title="二级标题（X.Y 子项）"
+        @click="actions.setHeading(3)"
+      >
+        H3
+      </button>
+      <button
+        type="button"
+        class="tb-btn"
+        :class="{ active: isActive('heading', { level: 4 }) }"
+        title="三级标题（（1）/（a）项）"
+        @click="actions.setHeading(4)"
+      >
+        H4
       </button>
       <button
         type="button"
@@ -322,7 +340,35 @@ function isActive(name, attrs = undefined) {
 
 :deep(.docx-prose p) {
   margin: 0 0 8px;
-  text-indent: 2em;
+  text-indent: 0;
+}
+
+/* 合同开头甲乙方当事人行 / 鉴于引言 / 签署栏签字盖章行：后端用 blockquote 标记 */
+:deep(.docx-prose blockquote) {
+  text-indent: 0;
+  margin: 6px 0 8px;
+  padding: 0;
+  border-left: none;
+  color: inherit;
+}
+
+:deep(.docx-prose blockquote p) {
+  text-indent: 0;
+  margin: 0;
+}
+
+/* h3 / h4 之后的紧跟段（无空行）：去掉首行缩进，与标题一起顶格显示 */
+:deep(.docx-prose h3 + p),
+:deep(.docx-prose h4 + p) {
+  text-indent: 0;
+}
+
+/* h3 / h4 之后的列表项：与标题一起顶格，不额外叠加左缩进 */
+:deep(.docx-prose h3 + ul),
+:deep(.docx-prose h3 + ol),
+:deep(.docx-prose h4 + ul),
+:deep(.docx-prose h4 + ol) {
+  padding-left: 28px;
 }
 
 :deep(.docx-prose h1) {
@@ -342,18 +388,41 @@ function isActive(name, attrs = undefined) {
   text-indent: 0;
 }
 
+:deep(.docx-prose h1),
+:deep(.docx-prose h2),
+:deep(.docx-prose h3),
+:deep(.docx-prose h4) {
+  padding-left: 0;
+  margin-left: 0;
+  text-indent: 0;
+}
+
 :deep(.docx-prose h3) {
   font-family: '黑体', 'Times New Roman', serif;
   font-size: 12pt;
   font-weight: bold;
-  margin: 8px 0 6px;
-  padding-left: 2em;
+  margin-top: 8px;
+  margin-bottom: 6px;
+}
+
+:deep(.docx-prose h4) {
+  font-family: '黑体', 'Times New Roman', serif;
+  font-size: 12pt;
+  font-weight: bold;
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+/* h3 / h4 之后的紧跟段（无空行）：去掉首行缩进，与标题一起顶格显示 */
+:deep(.docx-prose h3 + p),
+:deep(.docx-prose h4 + p) {
   text-indent: 0;
 }
 
 :deep(.docx-prose ul),
 :deep(.docx-prose ol) {
-  padding-left: 2em;
+  /* 与导出列表的 Cm(0.74) 左缩进对齐（0.74cm ≈ 28px） */
+  padding-left: 28px;
   margin: 6px 0 8px;
 }
 

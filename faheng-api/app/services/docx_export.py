@@ -350,6 +350,10 @@ def export_markdown_docx(title: str, markdown: str, out_name: str) -> io.BytesIO
 
 # 匹配 `1.1 / 1.2 / 10.3` 这种子项编号（X.Y），后面必须跟空白字符
 _SUBITEM_RE = re.compile(r"^\s*\d+\.\d+(?:\.\d+)?[\s　:：、]")
+# 匹配 h4 数字子项 `（1）（2）…`，允许全角数字
+_H4_NUMBERED_RE = re.compile(r"^[\s　]*（[0-9０-９]+）")
+# 匹配 h4 字母子项 `（a）（b）…`
+_H4_LETTERED_RE = re.compile(r"^[\s　]*（[a-zA-Z]）")
 # 匹配 `甲方 / 乙方` 等常见合同当事人称呼行（中文括号 + 身份 + 冒号）
 _PARTY_LINE_RE = re.compile(
     r"^[\s　]*(?:甲方|乙方|丙方|丁方|出租方|承租方|采购方|供应方|卖方|买方|委托方|受托方)"
@@ -512,12 +516,22 @@ def _is_whereas_line(text: str) -> bool:
     return bool(_WHEREAS_RE.match(text))
 
 
+def _is_h4_numbered(text: str) -> bool:
+    return bool(_H4_NUMBERED_RE.match(text))
+
+
+def _is_h4_lettered(text: str) -> bool:
+    return bool(_H4_LETTERED_RE.match(text))
+
+
 def _classify_line(text: str) -> str | None:
-    """分类一行文本：'h2' / 'h3' / 'p' / None。None 表示无特殊处理（仍作 p）。"""
+    """分类一行文本：'h2' / 'h3' / 'h4' / 'p' / None。None 表示无特殊处理（仍作 p）。"""
     if _is_clause_title_line(text):
         return "h2"
     if _is_subitem_line(text):
         return "h3"
+    if _is_h4_numbered(text) or _is_h4_lettered(text):
+        return "h4"
     if _is_party_line(text):
         return "p"
     if _is_whereas_line(text):
@@ -615,10 +629,10 @@ def normalize_html_for_export(html: str) -> str:
                 p.decompose()
                 continue
             kind = _classify_line(cleaned)
-            if kind == "h3":
+            if kind in ("h3", "h4"):
                 # <p><strong>X.Y ...</strong>...</p> → <h3>X.Y ...</h3>
                 strong_texts = _collect_strong_texts(p)
-                h = _new_heading_from_text_with_partial_bold(3, cleaned, strong_texts)
+                h = _new_heading_from_text_with_partial_bold(int(kind[1]), cleaned, strong_texts)
                 p.replace_with(h)
                 continue
             if kind == "h2":
@@ -669,7 +683,7 @@ def normalize_html_for_export(html: str) -> str:
                 node = _new_paragraph_from_inlines(content, style=p.get("style"))  # type: ignore[arg-type]
             elif tag_name == "p_text":
                 node = _new_paragraph_from_text(content, style=p.get("style"))  # type: ignore[arg-type]
-            elif tag_name in ("h2", "h3"):
+            elif tag_name in ("h2", "h3", "h4"):
                 node = _new_heading_from_text(int(tag_name[1]), content)  # type: ignore[arg-type]
             else:
                 # 兜底：当作纯文本段落
@@ -678,7 +692,97 @@ def normalize_html_for_export(html: str) -> str:
             anchor = node
         p.decompose()
 
+    # 后处理：父 h3 下的子 h3 若编号与父冲突（6.1 / 6.1 → 6.1.1 / 6.1.2），自动归一化。
+    _normalize_conflicting_numbers(body)
+
     return "".join(str(c) for c in body.children)
+
+
+# 匹配 h3 文本开头的子项编号：1.1 / 1.2.3 / 10.4.5 等
+_H3_NUMBER_RE = re.compile(r"^[\s　]*(\d+(?:\.\d+)+)[\s　]+")
+
+
+def _normalize_conflicting_numbers(body) -> None:
+    """把父 h3 下与父编号冲突的子 h3 自动归一化。
+
+    示例（错误 → 正确）：
+        <h3>6.1 甲方权利与义务</h3>
+        <h3>6.1 权利</h3>     →  <h3>6.1.1 权利</h3>
+        <h3>6.2 义务</h3>     →  <h3>6.1.2 义务</h3>
+
+    规则：
+    - 维护当前父编号前缀（如 6.1）。每当新 h3 的编号段在父前缀之后仍存在「同号」
+      或「重号」情况（首段相同 / 出现在已用过的同级），都视为冲突。
+    - 父编号用一段标识（``\\d+(?:\\.\\d+)+``），子编号必须以父编号为前缀且至少多一段。
+    - 子编号在父作用域下按出现顺序递增，不假设 LLM 给的序号一定连续。
+    - 没有冲突或不在父作用域内的 h3 保持原样。
+    """
+    parent_prefix: str | None = None
+    child_counter = 0
+
+    for h in list(body.find_all("h3", recursive=False)):
+        full_text = h.get_text()
+        m = _H3_NUMBER_RE.match(full_text)
+        if not m:
+            # 没有 X.Y 编号的 h3：清空父作用域，让后续 h3 重新建立父级
+            parent_prefix = None
+            child_counter = 0
+            continue
+
+        number = m.group(1)  # 例如 "6.1" 或 "6.1.1"
+        rest = full_text[m.end():]
+
+        if parent_prefix is None:
+            # 第一次进入（或父作用域已重置）：若是 X.Y（恰好两段），作父；否则按父处理（清空状态）
+            segments = number.split(".")
+            if len(segments) == 2:
+                parent_prefix = number
+                child_counter = 0
+            else:
+                # 已经是 X.Y.Z，没有可作为父的两段号：清状态，下一个 h3 再尝试
+                parent_prefix = None
+                child_counter = 0
+            continue
+
+        # 已有父作用域：判断是否冲突
+        if number == parent_prefix:
+            # 同号冲突：6.1 重复出现 → 升级为下一级子项
+            child_counter += 1
+            new_number = f"{parent_prefix}.{child_counter}"
+            _rewrite_h3_number(h, new_number, rest)
+            continue
+        if number.startswith(parent_prefix + "."):
+            # 已经是 X.Y.Z（合理嵌套）：保留原样，但更新计数器
+            tail = number[len(parent_prefix) + 1:]
+            try:
+                last = int(tail.split(".")[-1])
+                child_counter = max(child_counter, last)
+            except ValueError:
+                pass
+            continue
+        # 与父无关：例如在 6.1 父作用域内突然出现 7.x → 重置父作用域
+        segments = number.split(".")
+        if len(segments) == 2:
+            parent_prefix = number
+            child_counter = 0
+        else:
+            parent_prefix = None
+            child_counter = 0
+
+
+def _rewrite_h3_number(h, new_number: str, rest: str) -> None:
+    """用 new_number 替换 h3 文本开头的 old_number，保留原 strong 加粗范围。"""
+    new_text = f"{new_number} {rest}".strip()
+    if h.find(["strong", "b"]) is not None:
+        # 重建 h3，把 strong 子串范围搬到新文本
+        bold_substrings = _collect_strong_texts(h)
+        h.clear()
+        rebuilt = _new_heading_from_text_with_partial_bold(3, new_text, bold_substrings)
+        for child in list(rebuilt.children):
+            h.append(child)
+    else:
+        h.clear()
+        h.string = new_text
 
 
 # ---------- 路径④：HTML → docx（前端 TipTap WYSIWYG 导出 - 主路径） ----------
@@ -812,20 +916,47 @@ def _add_html_runs_with_default_bold(
             _set_run_fonts(run, east_asia=east_asia)
 
 
-def _add_paragraph_from_element(doc, p_elem) -> None:
-    """<p> 节点映射为 docx 段落：保留对齐、首行缩进、行间距；行内样式递归处理"""
+def _add_paragraph_from_element(doc, p_elem, *, is_blockquote: bool = False) -> None:
+    """<p> 节点映射为 docx 段落：保留对齐、首行缩进、行间距；行内样式递归处理
+
+    缩进规则（与前端 .docx-prose 严格对齐）：
+    - 居中 / blockquote：无首行缩进；
+    - 普通 <p>：首行缩进 2 字符；
+    - 紧跟 h3 的 <p>：继承 h3 的左缩进 + 取消首行缩进（前端 .docx-prose h3 + p）。
+    """
     p = doc.add_paragraph()
     pf = p.paragraph_format
     pf.line_spacing_rule = WD_LINE_SPACING.ONE_POINT_FIVE
     pf.line_spacing = _LINE_SPACING
     pf.space_after = Pt(8)  # 对齐前端 p { margin: 0 0 8px }
 
+    # 直接传入 <blockquote> 节点时（罕见兜底），先用 _iter_block_elements 拆出内部 p
+    # 这里更常见的是来自 _iter_block_elements 的 ("block_quote", <p>) 元组。
+    if (p_elem.name or "").lower() == "blockquote":
+        is_blockquote = True
+
     align = _parse_text_align(p_elem.get("style"))
     p.alignment = align
 
+    # 紧跟 h3/h4 的 <p>：取消首行缩进，与标题一起顶格显示
+    prev_sibling = p_elem.find_previous_sibling()
+    follows_heading = (
+        prev_sibling is not None
+        and getattr(prev_sibling, "name", None)
+        and prev_sibling.name.lower() in ("h3", "h4")
+    )
+    if follows_heading and not is_blockquote and align != WD_ALIGN_PARAGRAPH.CENTER:
+        pf.left_indent = Cm(0)
+        pf.first_line_indent = Cm(0)
+        # 行内 run 仍走通用样式（仿宋 + 12pt）
+        _add_html_runs(p, p_elem, size=_BODY_FONT_SIZE, east_asia=_BODY_FONT_NAME)
+        return
+
     # 首行缩进 2 字符：与 _apply_body_format 一致，同时写 firstLineChars + firstLine
-    # 居中段落不缩进（前端 h1 / 居中 p 不缩进）
-    if align != WD_ALIGN_PARAGRAPH.CENTER:
+    # 居中段落不缩进（前端 h1 / 居中 p 不缩进）；
+    # blockquote 也不缩进——前端 RichEditor 已对 blockquote 取消首行缩进，
+    # 这里保持一致（合同抬头 / 鉴于是引言 / 签署栏等被规范化层转成的引用块不缩进）。
+    if align != WD_ALIGN_PARAGRAPH.CENTER and not is_blockquote:
         pPr = p._p.get_or_add_pPr()
         ind = pPr.find(qn("w:ind"))
         if ind is None:
@@ -841,6 +972,7 @@ def _add_heading_from_element(doc, h_elem, level: int) -> None:
 
     H1=合同名（居中 22pt 黑体）；H2=第X条（顶格 14pt 黑体）；
     H3=X.Y 子项（左缩进 2 字符 12pt 黑体，体现层级从属）。
+    H3 的层级缩进与父 H3 嵌套：H3 自身一级左缩进；若父级也是 H3，再叠加一级。
     """
     p = doc.add_paragraph()
     pf = p.paragraph_format
@@ -858,23 +990,23 @@ def _add_heading_from_element(doc, h_elem, level: int) -> None:
         align = WD_ALIGN_PARAGRAPH.LEFT
         pf.space_before = Pt(18)  # 前端 h2 { margin: 18px 0 10px }
         pf.space_after = Pt(10)
-    else:  # h3：子项标题，缩进 2 字符与正文首行对齐
+    else:  # h3 / h4：子项标题，顶格左对齐
         size = _BODY_FONT_SIZE
         east_asia = _HEADING_FONT_NAME
         align = WD_ALIGN_PARAGRAPH.LEFT
-        pf.space_before = Pt(8)
+        pf.space_before = Pt(8 if level == 3 else 6)
         pf.space_after = Pt(6)
-        pf.left_indent = Cm(0.74)
-        pf.first_line_indent = Cm(0)  # 整段已缩进，首行不再额外缩
+        pf.left_indent = Cm(0)
+        pf.first_line_indent = Cm(0)  # 顶格对齐，首行不再额外缩
 
     p.alignment = align
     if level <= 2:
         # 一二级标题无首行缩进（前端 h1/h2 { text-indent: 0 }）
         _remove_first_line_indent(p)
 
-    # h3 内的 <strong> 子节点需要在导出 docx 里只让标题部分加粗，
+    # h3/h4 内的 <strong> 子节点需要在导出 docx 里只让标题部分加粗，
     # 其余字符不沿用整段加粗样式（默认 heading 整段 bold）。
-    if level == 3:
+    if level >= 3:
         _add_html_runs_with_default_bold(p, h_elem, size=size, east_asia=east_asia, default_bold=False)
     else:
         run = p.add_run(h_elem.get_text())
@@ -964,15 +1096,30 @@ def _add_table_from_element(doc, table_elem) -> None:
 
 
 def _iter_block_elements(root):
-    """遍历 root 的直接子节点中的块级元素（h1/h2/h3/p/ul/ol/table）"""
+    """遍历 root 的直接子节点中的块级元素（h1/h2/h3/p/ul/ol/table）
+
+    `<blockquote>` 内嵌的 `<p>` 也按独立段落产出（让签字/盖章等行各自成段），
+    并用 `block_quote` 元数据标记，让 `_add_paragraph_from_element` 抑制首行缩进。
+    """
     for child in root.children:
         if getattr(child, "name", None) is None:
             continue
         tag = child.name.lower()
-        if tag in ("h1", "h2", "h3", "p", "ul", "ol", "table", "blockquote", "div"):
+        if tag in ("h1", "h2", "h3", "h4", "p", "ul", "ol", "table", "blockquote", "div"):
             if tag == "div":
-                # 递归 div 内层
                 yield from _iter_block_elements(child)
+            elif tag == "blockquote":
+                # 拆出 blockquote 内层所有 <p> 子节点，按独立段落产出
+                inner_paras = [
+                    c for c in child.children
+                    if getattr(c, "name", None) and c.name.lower() == "p"
+                ]
+                if not inner_paras:
+                    # blockquote 内没有 <p>：整个节点当作正文段落（罕见兜底）
+                    yield ("block_quote", child)
+                    continue
+                for inner_p in inner_paras:
+                    yield ("block_quote", inner_p)
             else:
                 yield child
 
@@ -996,20 +1143,25 @@ def export_html_docx(title: str, html: str, out_name: str) -> io.BytesIO:
     body = soup.find("body") or soup
 
     for elem in _iter_block_elements(body):
+        # _iter_block_elements 对 blockquote 拆出的内部 <p> 会用元组 ("block_quote", <p>) 返回
+        is_blockquote = False
+        if isinstance(elem, tuple) and len(elem) == 2 and elem[0] == "block_quote":
+            is_blockquote = True
+            elem = elem[1]
         tag = elem.name.lower()
         if tag == "h1":
             _add_heading_from_element(doc, elem, 1)
-        elif tag in ("h2", "h3"):
-            _add_heading_from_element(doc, elem, 2 if tag == "h2" else 3)
+        elif tag in ("h2", "h3", "h4"):
+            _add_heading_from_element(doc, elem, int(tag[1]))
         elif tag == "p":
-            _add_paragraph_from_element(doc, elem)
+            _add_paragraph_from_element(doc, elem, is_blockquote=is_blockquote)
         elif tag in ("ul", "ol"):
             _add_list_from_element(doc, elem)
         elif tag == "table":
             _add_table_from_element(doc, elem)
         elif tag == "blockquote":
-            # 引用当作正文段落处理
-            _add_paragraph_from_element(doc, elem)
+            # blockquote 内没 <p> 的兜底分支
+            _add_paragraph_from_element(doc, elem, is_blockquote=True)
 
     out = io.BytesIO()
     doc.save(out)

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import re
 import uuid
 
 from fastapi import HTTPException
@@ -70,6 +71,7 @@ async def generate_draft(req: DraftGenerateIn) -> DraftSession:
         )
 
     session.markdown = _clean_markdown(session.markdown)
+    session.markdown = normalize_party_intro_lines(session.markdown)
     return session
 
 
@@ -86,6 +88,137 @@ def _clean_markdown(md: str) -> str:
     return md
 
 
+# 与 docx_export._PARTY_LINE_RE 同形（保证前后端对「当事人行」识别一致）：
+# 甲方 / 乙方 / 丙方 / 丁方 / 出租方 / 承租方 / 采购方 / 供应方 / 卖方 / 买方 / 委托方 / 受托方
+# 可选括号角色 + 冒号（半角 / 全角）
+_PARTY_LEAD_RE = re.compile(
+    r"^\s*(?:甲方|乙方|丙方|丁方|出租方|承租方|采购方|供应方|卖方|买方|委托方|受托方)"
+    r"(?:[（(][^)）]+[)）])?"
+    r"\s*[:：]"
+)
+# 抬头 / 鉴于是引言段特征：段落同时包含甲乙两方关键字（甲方 / 乙方 / 双方 / 两方）
+_INTRO_KEYWORDS = ("甲方", "乙方", "双方", "两方")
+# 签署栏标题（h2 标题关键词）：含「签署」二字即可，无需条号
+_SIGN_HEADER_RE = re.compile(r"^\s*(?:##)?\s*第[一二三四五六七八九十百零0-9]+条?\s*签署栏\s*$|^\s*(?:##\s*)?签署栏\s*$")
+
+
+def _looks_like_intro_paragraph(text: str) -> bool:
+    """抬头 / 鉴于是引言段特征：含「甲方」「乙方」「双方」「两方」中的至少两个。
+
+    单一关键字风险高（如正文里出现「甲方应在...」是正常段落），双关键字保证只命中
+    同时介绍两方身份的引言 / 鉴于段落。
+    """
+    hits = sum(1 for kw in _INTRO_KEYWORDS if kw in text)
+    return hits >= 2
+
+
+def normalize_party_intro_lines(md: str) -> str:
+    """把合同开头 / 鉴于引言 / 签署栏下的当事人称呼行和引言段转为引用块。
+
+    输出 markdown 在 tiptap-markdown 渲染时成为 `<blockquote>`，
+    前端 CSS 对 `<blockquote>` 取消首行缩进（与 docx 导出路径一致），
+    从而彻底解决：
+      1) 合同开头 `甲方（采购方）：【甲方名称】` 等当事人称呼行被误加首行缩进；
+      2) `## 鉴于条款` / `## 鉴于` h2 后紧跟的甲乙方引言段被误加首行缩进；
+      3) `## 签署栏` h2 后甲方 / 乙方签字盖章行被误加首行缩进。
+
+    仅识别已知形态 + 不破坏既有 markdown 结构；处理后 LLM 修订时仍按同一规范化层再跑一遍，
+    前端所见与导出 docx 永远一致。
+    """
+    if not md or not md.strip():
+        return md
+
+    lines = md.splitlines()
+    out: list[str] = []
+    in_signature_block = False  # 是否处于「签署栏」h2 之后
+    prev_was_sign_header = False  # 上一行是签署栏 h2 / 显式标题
+
+    i = 0
+    n = len(lines)
+    # 找到第一个非空段落索引（合同正文的真正起首，可能是标题或当事人行）
+    first_text_idx = next(
+        (idx for idx, ln in enumerate(lines) if ln.strip()), 0
+    )
+
+    while i < n:
+        raw = lines[i]
+        stripped = raw.strip()
+
+        # 1) 签署栏 h2 标题：标记进入签名块区域
+        if stripped.startswith("## "):
+            out.append(raw)
+            in_signature_block = bool(_SIGN_HEADER_RE.match(stripped))
+            i += 1
+            continue
+        # 空行不重置 in_signature_block（让 h2 与当事人行之间的空行保留区域状态）
+        if not stripped:
+            out.append(raw)
+            i += 1
+            continue
+        # 其他 markdown 行（标题 / 围栏 / 列表 / 已 blockquote）原样保留并退出签名区域
+        if (
+            stripped.startswith("# ")
+            or stripped.startswith("### ")
+            or stripped.startswith("- ")
+            or stripped.startswith("* ")
+            or stripped.startswith("> ")
+            or stripped.startswith("```")
+        ):
+            in_signature_block = False
+            out.append(raw)
+            i += 1
+            continue
+
+        # 2) 合同开头第一段（first_text_idx 起首的非空行）：当事人称呼行直接升级为引用块
+        if i == first_text_idx and _PARTY_LEAD_RE.match(stripped):
+            # 已在 blockquote 内则不再包裹
+            if not raw.lstrip().startswith("> "):
+                prefix = "".join(ch if ch in (" ", "\t") else "" for ch in raw[: len(raw) - len(raw.lstrip())])
+                out.append(f"{prefix}> {stripped}")
+                i += 1
+                continue
+
+        # 3) 鉴于条款 / 鉴于 / 鉴于是引言后的首段：含双关键字、职能提升为引用块
+        if prev_was_sign_header is False and _looks_like_intro_paragraph(stripped):
+            # 跳过已在 bucket 内的行
+            if not raw.lstrip().startswith("> "):
+                prefix = "".join(ch if ch in (" ", "\t") else "" for ch in raw[: len(raw) - len(raw.lstrip())])
+                out.append(f"{prefix}> {stripped}")
+                i += 1
+                continue
+
+        # 4) 签署栏 h2 后的一段或多段：含甲方 / 乙方的称呼 / 签章行职能提升为引用块
+        #   以「甲方 / 乙方 / 丙方 + 可选括号角色 + 冒号」开头或包含「（签字）」「（盖章）」
+        if in_signature_block:
+            is_sign_line = (
+                _PARTY_LEAD_RE.match(stripped) is not None
+                or "（签字）" in stripped
+                or "（盖章）" in stripped
+                or "签字：" in stripped
+                or "盖章：" in stripped
+                or "日期：" in stripped
+            )
+            if is_sign_line and not raw.lstrip().startswith("> "):
+                prefix = "".join(ch if ch in (" ", "\t") else "" for ch in raw[: len(raw) - len(raw.lstrip())])
+                out.append(f"{prefix}> {stripped}")
+                i += 1
+                continue
+            # 非签章行（如「甲方与乙方就本合同...」）也属于签署栏尾段：含双关键字则升引用块
+            if _looks_like_intro_paragraph(stripped) and not raw.lstrip().startswith("> "):
+                prefix = "".join(ch if ch in (" ", "\t") else "" for ch in raw[: len(raw) - len(raw.lstrip())])
+                out.append(f"{prefix}> {stripped}")
+                i += 1
+                continue
+            # 离开签署栏区域（出现非签章、非引言的段落）
+            in_signature_block = False
+
+        out.append(raw)
+        prev_was_sign_header = False
+        i += 1
+
+    return "\n".join(out)
+
+
 async def revise_draft(session: DraftSession, instruction: str) -> DraftSession:
     """每次"当前全文 + 指令"整篇重生成（不用多轮历史，避免上下文污染）"""
     if not instruction.strip():
@@ -100,7 +233,7 @@ async def revise_draft(session: DraftSession, instruction: str) -> DraftSession:
             salvage=False,
         )
         session.title = out.title or session.title
-        session.markdown = _clean_markdown(out.markdown)
+        session.markdown = normalize_party_intro_lines(_clean_markdown(out.markdown))
     except LLMFormatError:
         raw = await chat_text(
             messages[:-1]
@@ -118,7 +251,7 @@ async def revise_draft(session: DraftSession, instruction: str) -> DraftSession:
         if fallback is None:
             raise HTTPException(502, "修订失败，请调整措辞后重试")
         session.title = fallback.title
-        session.markdown = fallback.markdown
+        session.markdown = normalize_party_intro_lines(_clean_markdown(fallback.markdown))
 
     from app.schemas.draft import HistoryItem
 

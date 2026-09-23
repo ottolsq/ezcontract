@@ -12,11 +12,6 @@ dist/
 .env
 *.env.local
 
-# 运行时数据
-faheng-api/data/uploads/
-faheng-api/data/exports/
-faheng-api/data/*.docx
-
 # 临时数据 / 调试 / 笔记
 data/
 exmple/

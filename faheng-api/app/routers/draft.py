@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Body, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 
 from app.schemas.draft import ContentIn, DraftGenerateIn, ExportIn, ReviseIn
 from app.services import draft_service
@@ -46,18 +46,22 @@ async def revise(draft_id: str, body: ReviseIn):
 
 @router.post("/{draft_id}/export")
 async def export(draft_id: str, body: ExportIn | None = Body(default=None)):
+    import asyncio
+    from urllib.parse import quote
+
     session = get_draft(draft_id)
     if session is None:
         raise HTTPException(404, "草稿不存在")
-    import asyncio
 
     html = body.html if body else None
-    path = await asyncio.to_thread(draft_service.export_draft_docx, session, html=html)
-    from urllib.parse import quote
-
+    buf, out_name = await asyncio.to_thread(
+        draft_service.export_draft_docx, session, html=html
+    )
     safe_title = session.title.strip()[:30] or "合同草稿"
-    return FileResponse(
-        path,
+    return StreamingResponse(
+        buf,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(safe_title + '.docx')}"},
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(safe_title + '.docx')}"
+        },
     )

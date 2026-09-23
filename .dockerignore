@@ -1,0 +1,41 @@
+# Docker 构建忽略——防止敏感/无关文件进镜像
+# 密钥与本地配置
+.env
+.env.*
+
+# 版本控制
+.git
+**/.git
+.gitignore
+**/.gitignore
+
+# 开发环境
+.venv/
+venv/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+
+# 前端 node_modules（必须在 alpine 内 npm ci 生成 Linux shebang，
+# 否则 WSL/NTFS 跨边界会把 Windows 的 node.exe shim 带进 alpine）
+**/node_modules/
+
+# IDE / 系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# 调试 / 笔记
+data/
+exmple/
+**/*.log
+
+# 文档
+README.md
+项目总结.md
+AI合同智能处理系统_技术方案.md
+生成、导出word保真方案.md

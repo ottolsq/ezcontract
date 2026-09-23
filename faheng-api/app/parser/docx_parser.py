@@ -110,9 +110,13 @@ def _paragraph_to_html(p: Paragraph) -> str:
     return f"<p{style_attr}>{body}</p>"
 
 
-def extract_docx_paragraphs(path) -> list[ParagraphInfo]:
-    """返回 body 级段落（含空段），下标即导出回填锚点。"""
-    doc: _DocxDocument = Document(str(path))
+def extract_docx_paragraphs(src) -> list[ParagraphInfo]:
+    """返回 body 级段落（含空段），下标即导出回填锚点。
+
+    `src` 可为：文件路径（str / Path）、或 file-like 对象（如 ``io.BytesIO``）。
+    python-docx 的 ``Document(src)`` 原生接受这两类入参。
+    """
+    doc: _DocxDocument = Document(src)
     result: list[ParagraphInfo] = []
     for p in doc.paragraphs:
         text = p.text

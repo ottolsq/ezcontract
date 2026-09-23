@@ -4,19 +4,20 @@
 ③ 起草 markdown → docx 轻量转换（无 HTML 时降级）
 ④ 起草 HTML → docx 高保真映射（前端 TipTap WYSIWYG 导出，主路径）
 另含审核报告导出。
+
+无状态化：所有导出函数返回 ``io.BytesIO``，不落盘。
 """
 from __future__ import annotations
 
+import io
 import re
 from copy import deepcopy
-from pathlib import Path
 
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_COLOR_INDEX, WD_LINE_SPACING
 from docx.oxml.ns import qn
-from docx.shared import Cm, Inches, Pt
+from docx.shared import Cm, Pt
 from bs4 import BeautifulSoup
 
-from app.config import settings
 from app.schemas.review import ReviewSession
 
 # ---------- 公共样式（公文风：A4 + 仿宋小四 + 1.5 倍行距） ----------
@@ -192,13 +193,17 @@ def _replace_clause_span(doc, session: ReviewSession) -> None:
         el.getparent().remove(el)
 
 
-def export_docx_inplace(session: ReviewSession) -> Path:
+def export_docx_inplace(session: ReviewSession) -> io.BytesIO:
     from docx import Document
 
-    doc = Document(session.upload_path)
+    if not session.upload_bytes:
+        # 理论不会发生（schema 保证 docx 上传时填充），兜底走重建
+        return export_docx_rebuilt(session)
+    doc = Document(io.BytesIO(session.upload_bytes))
     _replace_clause_span(doc, session)
-    out = settings.EXPORT_DIR / f"{session.id}_final.docx"
-    doc.save(str(out))
+    out = io.BytesIO()
+    doc.save(out)
+    out.seek(0)
     return out
 
 
@@ -251,14 +256,15 @@ def _build_rebuilt_docx(session: ReviewSession) -> "object":
     return doc
 
 
-def export_docx_rebuilt(session: ReviewSession) -> Path:
+def export_docx_rebuilt(session: ReviewSession) -> io.BytesIO:
     doc = _build_rebuilt_docx(session)
-    out = settings.EXPORT_DIR / f"{session.id}_final.docx"
-    doc.save(str(out))
+    out = io.BytesIO()
+    doc.save(out)
+    out.seek(0)
     return out
 
 
-def export_final_docx(session: ReviewSession) -> Path:
+def export_final_docx(session: ReviewSession) -> io.BytesIO:
     if session.file_type == "docx":
         return export_docx_inplace(session)
     return export_docx_rebuilt(session)
@@ -289,7 +295,7 @@ def _add_md_paragraph(doc, text: str, style: str | None = None, *, indent: bool 
     return p
 
 
-def export_markdown_docx(title: str, markdown: str, out_name: str) -> Path:
+def export_markdown_docx(title: str, markdown: str, out_name: str) -> io.BytesIO:
     from docx import Document
 
     doc = Document()
@@ -334,8 +340,9 @@ def export_markdown_docx(title: str, markdown: str, out_name: str) -> Path:
         else:
             _add_md_paragraph(doc, stripped, indent=True)
 
-    out = settings.EXPORT_DIR / out_name
-    doc.save(str(out))
+    out = io.BytesIO()
+    doc.save(out)
+    out.seek(0)
     return out
 
 
@@ -970,7 +977,7 @@ def _iter_block_elements(root):
                 yield child
 
 
-def export_html_docx(title: str, html: str, out_name: str) -> Path:
+def export_html_docx(title: str, html: str, out_name: str) -> io.BytesIO:
     """把编辑器导出的 HTML 转为 docx，版式与前端 A4 页面严格一致。"""
     from docx import Document
 
@@ -1004,15 +1011,16 @@ def export_html_docx(title: str, html: str, out_name: str) -> Path:
             # 引用当作正文段落处理
             _add_paragraph_from_element(doc, elem)
 
-    out = settings.EXPORT_DIR / out_name
-    doc.save(str(out))
+    out = io.BytesIO()
+    doc.save(out)
+    out.seek(0)
     return out
 
 
 # ---------- 审核报告 ----------
 
 
-def export_review_report(session: ReviewSession) -> Path:
+def export_review_report(session: ReviewSession) -> io.BytesIO:
     from docx import Document
     from docx.enum.text import WD_ALIGN_PARAGRAPH
 
@@ -1078,6 +1086,7 @@ def export_review_report(session: ReviewSession) -> Path:
     run = p.add_run(conclusion)
     _set_east_asia(run)
 
-    out = settings.EXPORT_DIR / f"{session.id}_report.docx"
-    doc.save(str(out))
+    out = io.BytesIO()
+    doc.save(out)
+    out.seek(0)
     return out

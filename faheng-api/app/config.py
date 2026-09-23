@@ -11,15 +11,14 @@ load_dotenv(BASE_DIR / ".env")
 
 
 class Settings:
-    """全局配置（demo 从简，不用 pydantic-settings）"""
+    """全局配置（demo 从简，不用 pydantic-settings）
+
+    无状态化：合同上传/导出全部走内存 BytesIO，**不再**预留任何落盘目录。
+    """
 
     LLM_BASE_URL: str = os.getenv("LLM_BASE_URL", "").rstrip("/")
     LLM_API_KEY: str = os.getenv("LLM_API_KEY", "")
     LLM_MODEL: str = os.getenv("LLM_MODEL", "deepseek-v4-flash")
-
-    DATA_DIR: Path = Path(os.getenv("DATA_DIR", str(BASE_DIR / "data")))
-    UPLOAD_DIR: Path = DATA_DIR / "uploads"
-    EXPORT_DIR: Path = DATA_DIR / "exports"
 
     RULES_PATH: Path = BASE_DIR / "rules" / "erp_rules.md"
 
@@ -44,10 +43,5 @@ class Settings:
     # 演示 token 有效期（秒）—— 进程内存白名单，重启后失效需重新登录
     AUTH_TOKEN_TTL: int = int(os.getenv("AUTH_TOKEN_TTL", "86400"))
 
-    def ensure_dirs(self) -> None:
-        self.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-        self.EXPORT_DIR.mkdir(parents=True, exist_ok=True)
-
 
 settings = Settings()
-settings.ensure_dirs()

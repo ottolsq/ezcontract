@@ -98,6 +98,14 @@ async function onExport() {
 
     <!-- 编辑器（单栏 WYSIWYG） -->
     <template v-else>
+      <el-alert
+        type="warning"
+        :closable="false"
+        show-icon
+        title="下载提醒"
+        description="平台不会保留您起草的合同内容，导出后请及时下载并保存到本地，避免丢失。"
+        class="download-notice"
+      />
       <el-card class="editor-pane">
         <template #header>
           <div class="pane-head">
@@ -203,6 +211,15 @@ h1 {
 
 .revise-card {
   flex-shrink: 0;
+}
+
+.download-notice {
+  margin-bottom: 14px;
+  flex-shrink: 0;
+}
+
+.download-notice :deep(.el-alert__title) {
+  font-weight: 600;
 }
 
 .revise-row {

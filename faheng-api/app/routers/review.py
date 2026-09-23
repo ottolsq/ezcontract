@@ -1,11 +1,10 @@
 """审查路由"""
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi import APIRouter, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 
+from app.config import BASE_DIR
 from app.schemas.review import DecisionIn
 from app.services import review_service
 from app.storage import SESSIONS, get_review
@@ -35,15 +34,20 @@ async def upload(file: UploadFile):
 
 @router.post("/sample")
 async def upload_sample():
-    """载入内置测试合同（前端"载入测试合同"按钮）"""
-    sample_path = Path(review_service.settings.UPLOAD_DIR).parent / "sample_contract.docx"
+    """载入内置测试合同（前端"载入测试合同"按钮）
+
+    测试合同在镜像构建期生成并嵌入镜像，运行时只读；不落盘用户数据目录。
+    """
+    import io
+
+    sample_path = BASE_DIR / "sample_contract.docx"
     if not sample_path.exists():
-        raise HTTPException(404, "测试合同未生成，请先运行 scripts/make_sample_docx.py")
+        raise HTTPException(
+            404, "测试合同未生成，请先运行 scripts/make_sample_docx.py 或重新构建镜像"
+        )
 
     class _FakeFile(UploadFile):
-        def __init__(self, path: Path):
-            import io
-
+        def __init__(self, path):
             self.file = io.BytesIO(path.read_bytes())
             self.filename = path.name
 
@@ -124,10 +128,10 @@ async def export_contract(review_id: str):
         raise HTTPException(404, "审查任务不存在")
     if session.status != "completed":
         raise HTTPException(400, "审查尚未完成")
-    path = await review_service.export_review_docx(session)
-    stem = Path(session.filename).stem
-    return FileResponse(
-        path,
+    buf = await review_service.export_review_docx(session)
+    stem = session.filename.rsplit(".", 1)[0]
+    return StreamingResponse(
+        buf,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": _url_quote_filename(f"{stem}_修改版.docx")},
     )
@@ -135,23 +139,21 @@ async def export_contract(review_id: str):
 
 @router.post("/{review_id}/report/export")
 async def export_report(review_id: str):
+    import asyncio
+
+    from app.services.docx_export import export_review_report
+
     session = get_review(review_id)
     if session is None:
         raise HTTPException(404, "审查任务不存在")
     if session.status != "completed":
         raise HTTPException(400, "审查尚未完成")
-    from app.services.docx_export import export_review_report
-
-    path = await _run(export_review_report, session)
-    stem = Path(session.filename).stem
-    return FileResponse(
-        path,
+    buf = await asyncio.to_thread(export_review_report, session)
+    buf.seek(0)
+    stem = session.filename.rsplit(".", 1)[0]
+    return StreamingResponse(
+        buf,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": _url_quote_filename(f"{stem}_审核报告.docx")},
     )
 
-
-async def _run(func, session):
-    import asyncio
-
-    return await asyncio.to_thread(func, session)

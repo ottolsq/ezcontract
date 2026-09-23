@@ -1,13 +1,14 @@
 """PDF 解析：pdfplumber 逐页提取文本行"""
 from __future__ import annotations
 
-from pathlib import Path
-
 from app.parser.docx_parser import ParagraphInfo
 
 
-def extract_pdf_lines(path: Path) -> list[ParagraphInfo]:
+def extract_pdf_lines(src) -> list[ParagraphInfo]:
     """返回 `ParagraphInfo` 列表（保留空行用于结构切分）。
+
+    `src` 可为：文件路径（str / Path）、或 file-like 对象（如 ``io.BytesIO``）。
+    pdfplumber.open 原生接受这两类入参。
 
     PDF 没有可靠样式信息，因此 `html` 字段就是按行包裹的 `<p>...</p>` 纯文本 fallback。
     文本量过少时抛错（疑似扫描件，demo 不做 OCR）。
@@ -17,7 +18,7 @@ def extract_pdf_lines(path: Path) -> list[ParagraphInfo]:
     import pdfplumber
 
     paragraphs: list[ParagraphInfo] = []
-    with pdfplumber.open(str(path)) as pdf:
+    with pdfplumber.open(src) as pdf:
         for page in pdf.pages:
             text = page.extract_text() or ""
             for line in text.splitlines():

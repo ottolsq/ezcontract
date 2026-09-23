@@ -1,7 +1,10 @@
 """生成测试用"乙方版本"合同（故意埋坑，条款取自 ERP 审核原型的 before 字段）
 
 运行：python scripts/make_sample_docx.py
-输出：data/sample_contract.docx
+输出：<项目根>/sample_contract.docx（与 Dockerfile COPY 路径一致，构建期嵌入镜像）
+
+无状态化：脚本输出位置改到项目根，便于镜像 COPY；
+运行时不再保留 sample 输出副本（容器里镜像层只读）。
 """
 from pathlib import Path
 
@@ -132,8 +135,7 @@ def main() -> None:
             run = p.add_run(line)
             _set_font(run)
 
-    out = Path(__file__).resolve().parent.parent / "data" / "sample_contract.docx"
-    out.parent.mkdir(parents=True, exist_ok=True)
+    out = Path(__file__).resolve().parent.parent / "sample_contract.docx"
     doc.save(str(out))
     print(f"生成测试合同: {out}")
 

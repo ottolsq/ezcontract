@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import uuid
 from pathlib import Path
 
@@ -26,7 +27,7 @@ def new_review_id() -> str:
 
 
 async def save_upload(file: UploadFile) -> ReviewSession:
-    """保存上传文件并解析切分条款"""
+    """解析上传文件并切分条款（字节全程驻留内存，无状态化）"""
     filename = file.filename or "contract.docx"
     ext = Path(filename).suffix.lower()
     if ext not in ALLOWED_EXT:
@@ -41,36 +42,32 @@ async def save_upload(file: UploadFile) -> ReviewSession:
         raise HTTPException(400, "文件为空")
 
     review_id = new_review_id()
-    upload_path = settings.UPLOAD_DIR / f"{review_id}{ext}"
-    upload_path.write_bytes(content)
+    buf = io.BytesIO(content)
 
     try:
         if ext == ".docx":
-            lines = extract_docx_paragraphs(upload_path)
+            lines = extract_docx_paragraphs(buf)
         else:
-            lines = extract_pdf_lines(upload_path)
+            lines = extract_pdf_lines(buf)
     except ValueError as e:
-        upload_path.unlink(missing_ok=True)
         raise HTTPException(400, str(e))
     except Exception as e:
-        upload_path.unlink(missing_ok=True)
         raise HTTPException(400, f"文件解析失败：{e}")
 
     clauses, preamble, tail = split_clauses(lines)
     if not clauses:
-        upload_path.unlink(missing_ok=True)
         raise HTTPException(400, "未能在文档中识别出任何条款内容")
 
     session = ReviewSession(
         id=review_id,
         filename=filename,
         file_type=ext.lstrip("."),
-        upload_path=str(upload_path),
         clauses=clauses,
         preamble_text="\n".join(p.text for p in preamble),
         tail_text="\n".join(p.text for p in tail),
         preamble_lines=[p.text for p in preamble],
         tail_lines=[p.text for p in tail],
+        upload_bytes=content,  # DOCX 就地替换导出仍需打开原件，留在 session 内存里
     )
     return session
 
@@ -183,9 +180,10 @@ def apply_decisions(session: ReviewSession, decisions: list[Decision]) -> int:
     return len(session.decisions)
 
 
-async def export_review_docx(session: ReviewSession) -> Path:
-    """导出决策回填后的最终合同 docx"""
+async def export_review_docx(session: ReviewSession) -> io.BytesIO:
+    """导出决策回填后的最终合同 docx（内存 BytesIO，无落盘）"""
     if not session.decisions:
         raise HTTPException(400, "尚无任何决策记录，请先在风险清单中处理至少一项")
-    path = await asyncio.to_thread(export_final_docx, session)
-    return path
+    buf = await asyncio.to_thread(export_final_docx, session)
+    buf.seek(0)
+    return buf

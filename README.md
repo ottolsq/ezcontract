@@ -7,9 +7,9 @@
 ## 架构（Demo 简化版）
 
 ```
-faheng-web (Vue3 + Element Plus + Pinia, :5173)
+faheng-web (Vue3 + Element Plus + Pinia, :58068)
     │ /api 代理
-faheng-api (FastAPI, :8000)
+faheng-api (FastAPI, :58069)
     │ OpenAI 兼容接口
 LLM 网关 (aihub.ssturing.com, deepseek-v4-flash)
 ```
@@ -24,7 +24,7 @@ LLM 网关 (aihub.ssturing.com, deepseek-v4-flash)
 # 后端（终端 1）
 cd faheng-api
 pip install -r requirements.txt      # 首次
-python run.py                        # http://localhost:8000, Swagger: /docs
+python run.py                        # http://localhost:58069, Swagger: /docs
 
 # 生成测试合同（首次，用于"载入测试合同"按钮）
 python scripts/make_sample_docx.py
@@ -32,7 +32,7 @@ python scripts/make_sample_docx.py
 # 前端（终端 2）
 cd faheng-web
 npm install                          # 首次
-npm run dev                          # http://localhost:5173
+npm run dev                          # http://localhost:58068
 ```
 
 ## 配置（faheng-api/.env）
@@ -44,6 +44,40 @@ LLM_MODEL=deepseek-v4-flash
 ```
 
 > 网关模型带思维链（reasoning_content 占 token），max_tokens 已调大（审查 12K / 起草 16K），勿调小。
+
+## Docker 部署（单容器交付）
+
+多阶段构建（根目录 [Dockerfile](Dockerfile)）：`node:20-alpine` 构建前端 → `python:3.11-slim` 安装后端依赖并拷入业务代码与前端产物，**单个 uvicorn 进程同时 serve 前端静态页面与 API**（同源，端口 58069）。
+
+```bash
+# 构建（仓库根目录执行）
+docker build -t faheng:latest .
+
+# 运行（.env 按"配置"章节准备，放在当前目录）
+docker run -d --name faheng --restart unless-stopped \
+  -p 58069:58069 --env-file .env faheng:latest
+
+# 探活
+curl http://127.0.0.1:58069/api/health
+```
+
+离线交付（目标服务器不走镜像仓库）：
+
+```bash
+docker save -o faheng-latest.tar faheng:latest
+scp -P <ssh端口> faheng-latest.tar user@<服务器>:~/
+# 登录目标服务器后：
+docker load -i faheng-latest.tar
+# 准备 .env（tar 不含密钥，必须在服务器上另备）后 docker run，命令同上
+```
+
+镜像要点：
+
+- `.env` 不进镜像（`.dockerignore` 已排除），运行时 `--env-file` 注入
+- 合同文件**零落盘**：上传/导出全程内存，服务器磁盘不残留用户合同
+- 非 root 用户运行；HEALTHCHECK 复用 `/api/health`
+- `--proxy-headers`：前置 Nginx / Cloudflare Tunnel 时 Swagger 重定向 scheme 正确
+- 本地 dev 双进程形态不受影响：`web_dist/` 不存在时后端不挂载静态路由
 
 ## 演示流程
 
@@ -59,8 +93,9 @@ LLM_MODEL=deepseek-v4-flash
 | `faheng-api/app/parser/clause_splitter.py` | 中文合同"第X条"切分（导出回填锚点） |
 | `faheng-api/app/llm/client.py` | LLM 结构化输出（清洗/重试/截断抢救） |
 | `faheng-api/app/services/docx_export.py` | 导出三路径：docx 就地替换 / PDF 重建 / HTML→docx 保真转换（前端 WYSIWYG 导出） |
-| `faheng-api/scripts/make_sample_docx.py` | 生成埋坑测试合同 |
+| `faheng-api/scripts/make_sample_docx.py` | 生成埋坑测试合同（输出到项目根，构建期嵌入镜像） |
 | `faheng-web/src/stores/review.js` | 审查工作台状态机（五视图 + 决策乐观更新） |
+| `Dockerfile` / `.dockerignore` | 单容器多阶段构建（根目录） |
 
 ## 已知限制（Demo 定位）
 

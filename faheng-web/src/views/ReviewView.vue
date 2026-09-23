@@ -64,6 +64,14 @@ async function exportReport() {
     <ProcessingPanel v-else-if="store.phase === 'processing'" />
 
     <template v-else-if="store.phase === 'workspace'">
+      <el-alert
+        type="warning"
+        :closable="false"
+        show-icon
+        title="下载提醒"
+        description="平台不会保留您的合同文件，导出后请及时下载并保存到本地，避免丢失。"
+        class="download-notice"
+      />
       <StatsStrip />
       <div class="workspace">
         <RiskListPane />
@@ -72,7 +80,17 @@ async function exportReport() {
       </div>
     </template>
 
-    <ReportPanel v-else-if="store.phase === 'report'" />
+    <template v-else-if="store.phase === 'report'">
+      <el-alert
+        type="warning"
+        :closable="false"
+        show-icon
+        title="下载提醒"
+        description="平台不会保留您的合同或审核报告，导出后请及时下载并保存到本地，避免丢失。"
+        class="download-notice"
+      />
+      <ReportPanel />
+    </template>
   </div>
 </template>
 
@@ -117,5 +135,14 @@ h1 {
   .workspace {
     grid-template-columns: 1fr;
   }
+}
+
+.download-notice {
+  margin-bottom: 14px;
+  flex-shrink: 0;
+}
+
+.download-notice :deep(.el-alert__title) {
+  font-weight: 600;
 }
 </style>

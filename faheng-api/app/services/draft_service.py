@@ -1,6 +1,7 @@
 """起草服务：生成 / 修订 / 内容保存 / 导出"""
 from __future__ import annotations
 
+import io
 import uuid
 
 from fastapi import HTTPException
@@ -125,9 +126,13 @@ async def revise_draft(session: DraftSession, instruction: str) -> DraftSession:
     return session
 
 
-def export_draft_docx(session: DraftSession, *, html: str | None = None) -> "Path":
+def export_draft_docx(session: DraftSession, *, html: str | None = None) -> tuple[io.BytesIO, str]:
+    """返回 (字节流, 下载文件名)——字节全程内存，不落盘"""
     safe_title = session.title.strip() or "合同草稿"
     out_name = f"{session.id}_{safe_title[:30]}.docx"
     if html and html.strip():
-        return export_html_docx(session.title, html, out_name)
-    return export_markdown_docx(session.title, session.markdown, out_name)
+        buf = export_html_docx(session.title, html, out_name)
+    else:
+        buf = export_markdown_docx(session.title, session.markdown, out_name)
+    buf.seek(0)
+    return buf, out_name

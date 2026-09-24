@@ -33,7 +33,7 @@ class Settings:
     REVIEW_MAX_TOKENS: int = 12000
     DRAFT_MAX_TOKENS: int = 16000
 
-    # 风险分确定性权重
+    # 风险分确定性权重（前端派生用；后端不再计算 score）
     SCORE_HIGH_WEIGHT: int = 15
     SCORE_MEDIUM_WEIGHT: int = 7
 

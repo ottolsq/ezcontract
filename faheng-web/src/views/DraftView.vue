@@ -1,10 +1,12 @@
 <script setup>
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useRouter } from 'vue-router'
 import { useDraftStore } from '../stores/draft'
 import RichEditor from '../components/draft/RichEditor.vue'
 
 const store = useDraftStore()
+const router = useRouter()
 
 const editorRef = ref(null)
 const form = ref({
@@ -43,19 +45,26 @@ async function onExport() {
     // 拦截器已提示错误，这里静默
   }
 }
+
+/** 完成本次起草：清空 store + 跳首页 */
+function onFinish() {
+  store.$reset()
+  router.push('/')
+}
 </script>
 
 <template>
   <div class="page">
     <div class="page-head">
       <h1>合同起草</h1>
-      <el-button v-if="store.draftId" type="primary" @click="onExport">
-        导出 Word
-      </el-button>
+      <div v-if="store.draftId" class="head-actions">
+        <el-button type="warning" @click="onExport">导出 Word</el-button>
+        <el-button type="primary" @click="onFinish">完成</el-button>
+      </div>
     </div>
 
     <!-- 表单 -->
-    <el-card v-if="!store.draftId" class="form-card" v-loading="store.loading">
+    <el-card v-if="!store.draftId" class="form-card" shadow="never" v-loading="store.loading">
       <template #header>输入起草需求</template>
       <el-form label-width="90px">
         <el-form-item label="关键词" required>
@@ -106,7 +115,7 @@ async function onExport() {
         description="平台不会保留您起草的合同内容，导出后请及时下载并保存到本地，避免丢失。"
         class="download-notice"
       />
-      <el-card class="editor-pane">
+      <el-card class="editor-pane" shadow="never">
         <template #header>
           <div class="pane-head">
             <span>{{ store.title }}</span>
@@ -123,7 +132,7 @@ async function onExport() {
       </el-card>
 
       <!-- 修订对话 -->
-      <el-card class="revise-card">
+      <el-card class="revise-card" shadow="never">
         <template #header>
           <div class="pane-head">
             <span>对话式修订</span>
@@ -162,6 +171,12 @@ async function onExport() {
   justify-content: space-between;
   margin-bottom: 18px;
   flex-shrink: 0;
+}
+
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 h1 {

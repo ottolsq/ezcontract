@@ -10,7 +10,7 @@ const levelColor = { high: '#e74c3c', medium: '#f39c12', low: '#3498db' }
   <div class="stats">
     <div class="metric danger">
       <span>合同风险分</span>
-      <strong>{{ store.score }} / 100</strong>
+      <strong>{{ store.liveScore }} / 100</strong>
     </div>
     <div class="metric">
       <span>高风险</span>

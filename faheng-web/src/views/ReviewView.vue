@@ -1,6 +1,7 @@
 <script setup>
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useRouter } from 'vue-router'
 import { useReviewStore } from '../stores/review'
 import { download } from '../api'
 import UploadZone from '../components/review/UploadZone.vue'
@@ -12,7 +13,15 @@ import OpinionPane from '../components/review/OpinionPane.vue'
 import ReportPanel from '../components/review/ReportPanel.vue'
 
 const store = useReviewStore()
+const router = useRouter()
 const contractPaneRef = ref(null)
+
+/** 是否对合同正文做过任何影响导出内容的修改（采纳或修改建议） */
+const hasModifiedContract = computed(() =>
+  Object.values(store.decisions || {}).some(
+    (d) => d && (d.type === 'accepted' || d.type === 'modified'),
+  ),
+)
 
 // 选中风险变化 → 合同正文滚动到对应条款
 watch(
@@ -41,6 +50,12 @@ async function exportReport() {
   await download(`/review/${store.reviewId}/report/export`, `审核报告.docx`)
   ElMessage.success('已导出审核报告')
 }
+
+/** 完成本次审查：清空 store + 跳首页 */
+function onFinish() {
+  store.$reset()
+  router.push('/')
+}
 </script>
 
 <template>
@@ -49,12 +64,18 @@ async function exportReport() {
       <h1>合同审查</h1>
       <div v-if="store.phase === 'workspace'" class="head-actions">
         <el-button @click="goReport">查看审核报告</el-button>
-        <el-button type="primary" @click="exportContract">导出修改后合同</el-button>
+        <el-button type="warning" :disabled="!hasModifiedContract" @click="exportContract">
+          导出修改后合同
+        </el-button>
+        <el-button type="primary" @click="onFinish">完成</el-button>
       </div>
       <div v-else-if="store.phase === 'report'" class="head-actions">
         <el-button @click="store.phase = 'workspace'">返回审核</el-button>
-        <el-button @click="exportContract">导出修改后合同</el-button>
-        <el-button type="primary" @click="exportReport">导出审核报告</el-button>
+        <el-button type="warning" :disabled="!hasModifiedContract" @click="exportContract">
+          导出修改后合同
+        </el-button>
+        <el-button type="success" @click="exportReport">导出审核报告</el-button>
+        <el-button type="primary" @click="onFinish">完成</el-button>
       </div>
     </div>
 
@@ -115,7 +136,13 @@ async function exportReport() {
 
 h1 {
   margin: 0;
-  font-size: 22px;
+  font-size: 24px;
+}
+
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .workspace {

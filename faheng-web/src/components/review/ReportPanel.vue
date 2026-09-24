@@ -20,7 +20,7 @@ const levelLabel = { high: '高风险', medium: '中风险', low: '低风险' }
     <div class="summary">
       <div class="stat">
         <span>合同风险分</span>
-        <strong>{{ store.score }} / 100</strong>
+        <strong>{{ store.liveScore }} / 100</strong>
       </div>
       <div class="stat">
         <span>风险总数</span>

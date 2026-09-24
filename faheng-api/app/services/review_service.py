@@ -147,15 +147,8 @@ def _postprocess(
     return result, salvaged
 
 
-def compute_score(risks: list[RiskItem]) -> int:
-    """风险分确定性计算（不让 LLM 算）"""
-    high = sum(1 for r in risks if r.level == "high")
-    medium = sum(1 for r in risks if r.level == "medium")
-    return min(100, settings.SCORE_HIGH_WEIGHT * high + settings.SCORE_MEDIUM_WEIGHT * medium)
-
-
 async def run_review(session: ReviewSession) -> None:
-    """后台审查任务：分批调 LLM → 后处理 → 算分 → completed"""
+    """后台审查任务：分批调 LLM → 后处理 → completed"""
     try:
         batches = _make_batches(session.clauses)
         all_risks: list[RiskItem] = []
@@ -182,7 +175,7 @@ async def run_review(session: ReviewSession) -> None:
         risks, salvaged = _postprocess(all_risks, session.clauses, salvaged_any)
         session.risks = risks
         session.truncated_salvaged = salvaged
-        session.score = compute_score(risks)
+        # 风险分由前端根据"剩余未消除风险"派生，后端不再计算
         session.progress = 100
         session.stage = f"审查完成，共识别 {len(risks)} 项风险"
         session.status = "completed"

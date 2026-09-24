@@ -39,6 +39,25 @@ export const useReviewStore = defineStore('review', {
     }),
     processedCount: (s) => Object.keys(s.decisions).length,
     currentRisk: (s) => s.risks.find((r) => r.risk_id === s.currentRiskId) || null,
+    /**
+     * 当前剩余风险分：仅采纳(accepted)/修改(modified)算"已消除"，驳回(rejected)维持。
+     * 权重与后端保持一致（15 / 7，最高 100）。
+     */
+    liveScore: (s) => {
+      const eliminated = new Set(
+        Object.values(s.decisions)
+          .filter((d) => d && (d.type === 'accepted' || d.type === 'modified'))
+          .map((d) => d.risk_id),
+      )
+      let high = 0
+      let medium = 0
+      for (const r of s.risks) {
+        if (eliminated.has(r.risk_id)) continue
+        if (r.level === 'high') high += 1
+        else if (r.level === 'medium') medium += 1
+      }
+      return Math.min(100, high * 15 + medium * 7)
+    },
     visibleRisks(s) {
       return s.risks.filter((r) => {
         const levelOk = r.level === s.filters.level
@@ -111,7 +130,8 @@ export const useReviewStore = defineStore('review', {
     async fetchResult() {
       const { data } = await api.get(`/review/${this.reviewId}/result`)
       this.risks = data.risks
-      this.score = data.score
+      // score 已由前端 liveScore 派生，不再使用后端返回值
+      this.score = 0
       this.decisions = data.decisions || {}
       this.truncatedSalvaged = data.truncated_salvaged
       // 服务端可能刷新内存（重载场景），同步一次最新的条款/前后页

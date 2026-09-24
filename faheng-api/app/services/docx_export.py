@@ -1236,7 +1236,7 @@ def export_review_report(session: ReviewSession) -> io.BytesIO:
 
     meta = [
         f"合同文件：{session.filename}",
-        f"审查结果：共 {len(session.risks)} 项风险，风险分 {session.score}/100",
+        f"审查结果：共 {len(session.risks)} 项风险",
         f"高风险 {sum(1 for r in session.risks if r.level == 'high')} 项 / "
         f"中风险 {sum(1 for r in session.risks if r.level == 'medium')} 项",
     ]

@@ -3,6 +3,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
@@ -35,7 +36,29 @@ app.include_router(draft.router, dependencies=[Depends(auth.require_auth)])
 # 部署形态：单容器由 uvicorn 同时 serve 前端 build 产物
 # （本地 dev 形态：web_dist/ 不存在，StaticFiles 不挂载，行为不变）
 WEB_DIST = Path(__file__).resolve().parent.parent / "web_dist"
+WEB_INDEX = WEB_DIST / "index.html"
 if WEB_DIST.is_dir():
+    # SPA history 模式兜底：业务路径（如 /review、/draft）刷新时返回 index.html，
+    # 由 Vue Router 接管。/api/* 走业务路由，不会落到这里。
+    # 必须在 app.mount 之前声明，否则被 StaticFiles 抢走。
+    @app.get("/", include_in_schema=False)
+    async def spa_root():
+        return FileResponse(WEB_INDEX)
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def spa_fallback(full_path: str):
+        # 真实存在的静态文件直接返回（js/css/ico/图片等）
+        file_path = (WEB_DIST / full_path).resolve()
+        try:
+            file_path.relative_to(WEB_DIST)
+        except ValueError:
+            # 路径穿越：直接返回 index.html（理论上不会发生，兜底）
+            return FileResponse(WEB_INDEX)
+        if file_path.is_file():
+            return FileResponse(file_path)
+        # 其它全部回 SPA 入口
+        return FileResponse(WEB_INDEX)
+
     # 必须在所有 /api 路由 include 之后挂载，避免拦截 API 请求
     app.mount("/", StaticFiles(directory=str(WEB_DIST), html=True), name="web")
 

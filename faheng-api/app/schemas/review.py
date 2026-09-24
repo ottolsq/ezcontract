@@ -6,6 +6,14 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+class SubItem(BaseModel):
+    """条款内子项（如 5.1 / 5.3）—— 用于精确定位被替换的段落"""
+
+    sub_item_no: str  # "5.3"
+    start_idx: int  # 段落在原始文档中的绝对下标（与 Clause.start_idx 同坐标系）
+    end_idx: int
+
+
 class Clause(BaseModel):
     """切分后的合同条款（导出回填的锚点）"""
 
@@ -16,6 +24,7 @@ class Clause(BaseModel):
     html: str = ""  # 包含原段落样式的安全 HTML，供前端展示用
     start_idx: int  # docx 段落起始下标（PDF 时为行号）
     end_idx: int  # 段落结束下标（含）
+    subitems: list[SubItem] = []  # 条款内 X.Y 子项（与段落下标对齐）
 
 
 class RiskItem(BaseModel):
@@ -28,6 +37,7 @@ class RiskItem(BaseModel):
     issue: str = Field(description="风险说明，80字以内")
     impact: str = Field(description="对甲方的影响，80字以内")
     suggestion: str = Field(description="完整、可直接替换原条款的条款文本")
+    sub_item_no: str = Field(default="", description="风险指向的子项编号（如 5.3），无法定位或针对整条款时留空")
 
     # 后端补充字段
     risk_id: str = ""
@@ -47,6 +57,7 @@ class Decision(BaseModel):
     type: Literal["accepted", "modified", "rejected"]
     text: str | None = None  # accepted=suggestion 原文；modified=用户编辑后文本
     reason: str | None = None  # rejected 时可选原因
+    sub_item_no: str | None = None  # 与 RiskItem.sub_item_no 对齐，便于导出/重渲染直接命中子项段落
 
 
 class ReviewStats(BaseModel):

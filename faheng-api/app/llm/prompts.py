@@ -19,10 +19,19 @@ RISK_SCHEMA_HINT = """{
       "matched_rules": ["ERP-PAY-001"],
       "issue": "风险说明，80字以内",
       "impact": "对甲方的影响，80字以内",
-      "suggestion": "完整、可直接整段替换原条款的条款文本"
+      "suggestion": "完整、可直接整段替换原条款的条款文本",
+      "sub_item_no": "5.3"
     }
   ]
 }"""
+
+# 条款子项编号提示：LLM 引用具体 X.Y 子项时输出该编号，否则留空字符串。
+SUBITEM_NO_HINT = (
+    'sub_item_no 字段：如果风险针对条款中某个 X.Y 子项（如 5.1 / 5.3），'
+    '必须输出该子项编号字符串（例如 "5.3"）；如果风险针对整个条款、'
+    '或无法确定具体子项，输出空字符串 ""。\n'
+    "不要编造不存在的子项编号；只输出该条款正文里真实出现过的 X.Y。\n"
+)
 
 
 def _format_rules(rules: list[Rule]) -> str:
@@ -46,6 +55,9 @@ def build_review_prompt(clauses_text: str) -> list[dict]:
 ## 任务
 逐条对照规则库识别风险条款，输出 JSON（risks 为数组，未发现风险时为空数组）：
 {RISK_SCHEMA_HINT}
+
+## 子项编号
+{SUBITEM_NO_HINT}
 
 ## 硬性约束
 1. clause_id 只能取自上述编号，不得编造

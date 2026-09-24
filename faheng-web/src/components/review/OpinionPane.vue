@@ -87,7 +87,10 @@ async function onUndo() {
     <template #header>
       <div class="head">
         <span>法务意见</span>
-        <span class="clause-no">{{ risk.clause_no }}</span>
+        <span class="clause-no">
+          {{ risk.clause_no }}
+          <span v-if="risk.sub_item_no" class="sub-item">· {{ risk.sub_item_no }}</span>
+        </span>
       </div>
     </template>
 
@@ -206,6 +209,12 @@ async function onUndo() {
 .clause-no {
   color: #66758a;
   font-size: 13px;
+}
+
+.sub-item {
+  margin-left: 4px;
+  color: #b42318;
+  font-weight: 500;
 }
 
 .severity {

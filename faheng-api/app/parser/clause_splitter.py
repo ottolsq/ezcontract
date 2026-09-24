@@ -11,9 +11,11 @@ from __future__ import annotations
 import re
 
 from app.parser.docx_parser import ParagraphInfo
-from app.schemas.review import Clause
+from app.schemas.review import Clause, SubItem
 
 CLAUSE_RE = re.compile(r"^\s*第[一二三四五六七八九十百零〇\d]+条")
+# 条款内子项编号（X.Y，如 5.1 / 5.3 / 10.3.2），后必须跟空白/全角空格/冒号/顿号
+SUBITEM_RE = re.compile(r"^\s*(\d+\.\d+(?:\.\d+)?)[\s　:：、]")
 SIGNATURE_HINTS = ("（盖章）", "(盖章)", "授权代表", "签署日期", "签字盖章", "（签字）", "(签字)")
 
 # 条款标题行："第五条 合同金额与支付" → 编号 + 标题
@@ -66,6 +68,20 @@ def split_clauses(
         m = CLAUSE_NO_RE.match(first)
         clause_no = m.group(1) if m else first[:12]
         title = m.group(2).strip() if m and m.group(2) else ""
+        # 扫描条款区间内的 X.Y 子项编号（仅记录真实出现的，不补全缺失）
+        subitems: list[SubItem] = []
+        for i in range(start, end + 1):
+            t = paragraphs[i].text.strip()
+            sm = SUBITEM_RE.match(t)
+            if not sm:
+                continue
+            subitems.append(
+                SubItem(
+                    sub_item_no=sm.group(1),
+                    start_idx=i,
+                    end_idx=i,
+                )
+            )
         clauses.append(
             Clause(
                 clause_id=f"C{len(clauses) + 1:02d}",
@@ -75,6 +91,7 @@ def split_clauses(
                 html="".join(p.html for p in block),
                 start_idx=start,
                 end_idx=start + len(block) - 1,
+                subitems=subitems,
             )
         )
     return clauses, preamble, tail

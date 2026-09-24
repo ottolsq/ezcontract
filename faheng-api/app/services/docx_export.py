@@ -158,48 +158,88 @@ def _decided_replacements(session: ReviewSession) -> dict[str, list[str]]:
 
 
 def _replace_clause_span(doc, session: ReviewSession) -> None:
-    """把决策后的替换文本写回 docx 原件（段落级粒度：只动命中条款的相似段落）。
+    """把决策后的替换文本写回 docx 原件（段落级粒度：按 X.Y 子项编号精确替换）。
 
-    旧实现会把条款区间 [start_idx+1, end_idx] 整段删除后整体覆盖；
-    现改为：对每个 decision 的替换段落（按 \\n 切），在条款原段落集合中找相似度最高的
-    一段就地替换，保留其余原段落。这样采纳/修改只动真正被改的子项，不会把整条款覆盖。
+    优先按 (clause_id, sub_item_no) 在 Clause.subitems 中查到原段落下标并就地替换，
+    保留原段落样式与编号；未命中子项编号时退回原 Jaccard 相似度匹配作为兜底。
     """
+    from app.schemas.review import Decision
+
     clause_map = {c.clause_id: c for c in session.clauses}
     replacements = _decided_replacements(session)
+    risk_map = {r.risk_id: r for r in session.risks}
 
     paras = doc.paragraphs
+    # 决策文本（含 sub_item_no）—— 同一 risk 可能落到多段，仅 sub_item_no 命中段才就地替换
+    decision_lookup: dict[str, Decision] = session.decisions
     for cid, new_texts in replacements.items():
         clause = clause_map[cid]
-        # 该条款对应的原段落区间（闭区间）
+        # 子项编号 → 原段落下标（与 paras 下标对齐）
+        subitem_index: dict[str, int] = {
+            s.sub_item_no: s.start_idx for s in clause.subitems
+        }
         clause_paras = paras[clause.start_idx : clause.end_idx + 1]
-        # 收集非空原段落作为匹配候选（与下标绑定）
-        candidates: list[tuple[int, "Paragraph"]] = [
-            (i, p) for i, p in enumerate(clause_paras) if p.text.strip()
+
+        # 已替换过的子项编号：多决策命中同一子项时，后者覆盖前者
+        replaced_subitems: set[str] = set()
+        # 子项编号未命中的新段落：候选段列表（先打 used 标记，再走相似度兜底）
+        fallback_candidates: list[tuple[int, "Paragraph"]] = [
+            (clause.start_idx + i, p)
+            for i, p in enumerate(clause_paras)
+            if p.text.strip()
         ]
-        if not candidates:
-            continue
+        used_fallback_idx: set[int] = set()
 
-        used_idx: set[int] = set()
-        # 对每条新段落（按行切）找一个最相似的原段落就地改写
-        flat_lines: list[str] = []
+        # 把"已采纳/修改"的每条风险先按 sub_item_no 拆成 (subitem_no, text) 对
+        flat_lines: list[tuple[str, str]] = []  # (subitem_no_or_empty, text)
         for nt in new_texts:
-            flat_lines.extend(l for l in nt.splitlines() if l.strip())
+            for line in nt.splitlines():
+                line = line.strip()
+                if line:
+                    flat_lines.append(("", line))
+        # 上面 flat_lines 仅为兜底候选；下面重新按 decision 维度遍历以拿到 sub_item_no
+        decision_lines: list[tuple[str, str, str]] = []  # (subitem_no, level, line)
+        for d in decision_lookup.values():
+            if d.type not in ("accepted", "modified"):
+                continue
+            r = risk_map.get(d.risk_id)
+            if r is None or r.clause_id != cid:
+                continue
+            text = (d.text or "").strip() or r.suggestion
+            sub_no = (d.sub_item_no or r.sub_item_no or "").strip()
+            for line in text.splitlines():
+                line = line.strip()
+                if line:
+                    decision_lines.append((sub_no, r.level, line))
 
-        for line in flat_lines:
+        for sub_no, level, line in decision_lines:
+            # 1) 子项编号命中：直接就地替换
+            if sub_no and sub_no in subitem_index:
+                idx = subitem_index[sub_no]
+                if idx >= len(paras):
+                    continue
+                target_para = paras[idx]
+                # 若原段落以 X.Y 编号开头而新文本不带，自动补回编号（保留编号不丢）
+                orig_match = _SUBITEM_RE.match(target_para.text or "")
+                if orig_match and not _SUBITEM_RE.match(line):
+                    line = f"{orig_match.group(0)}{line.lstrip()}"
+                _replace_paragraph_text(target_para, line)
+                replaced_subitems.add(sub_no)
+                continue
+            # 2) 兜底：Jaccard 相似度匹配（保持旧实现行为，整条款风险/编号缺失时用）
             best_pos = -1
             best_score = 0.0
-            for pos, (orig_pos, p) in enumerate(candidates):
-                if orig_pos in used_idx:
+            for pos, (orig_pos, p) in enumerate(fallback_candidates):
+                if orig_pos in used_fallback_idx:
                     continue
                 s = _paragraph_similarity(p.text, line)
                 if s > best_score:
                     best_score = s
                     best_pos = pos
-            # 阈值 0.25：太弱视为新增段落，跳过（不追加到条款末尾以免污染后续条款）
             if best_score < 0.25 or best_pos < 0:
                 continue
-            orig_pos, target_para = candidates[best_pos]
-            used_idx.add(orig_pos)
+            orig_pos, target_para = fallback_candidates[best_pos]
+            used_fallback_idx.add(orig_pos)
             _replace_paragraph_text(target_para, line)
 
 

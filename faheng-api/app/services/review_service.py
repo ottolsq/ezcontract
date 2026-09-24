@@ -101,9 +101,31 @@ def _clauses_text(batch: list[Clause]) -> str:
 def _postprocess(
     raw_risks: list[RiskItem], clauses: list[Clause], salvaged: bool
 ) -> tuple[list[RiskItem], bool]:
-    """代码侧确定性校验：过滤非法引用、去重、编号"""
+    """代码侧确定性校验：过滤非法引用、去重、编号、子项编号归一"""
     clause_map = {c.clause_id: c for c in clauses}
     known_rules = get_rule_ids()
+
+    # (clause_id -> {valid_subitem_no set}) —— 仅记录真实出现的 X.Y
+    clause_subitems: dict[str, set[str]] = {
+        c.clause_id: {s.sub_item_no for s in c.subitems} for c in clauses
+    }
+
+    def _normalize_subitem(raw: str | None, suggestion: str, clause_id: str) -> str:
+        raw = (raw or "").strip()
+        valid = clause_subitems.get(clause_id, set())
+        if raw and raw in valid:
+            return raw
+        # 兜底：从 suggestion 文本开头抓 X.Y
+        if suggestion:
+            import re as _re
+
+            m = _re.match(r"^\s*(\d+\.\d+(?:\.\d+)?)", suggestion)
+            if m and m.group(1) in valid:
+                return m.group(1)
+        # 进一步兜底：LLM 给的 raw 编号格式合法 + 该 clause 至少有 1 个子项 → 信任 LLM
+        if raw and valid and _re.match(r"^\d+\.\d+(?:\.\d+)?$", raw):
+            return raw
+        return ""
 
     seen: set[tuple[str, str]] = set()
     result: list[RiskItem] = []
@@ -120,6 +142,7 @@ def _postprocess(
         r.matched_rules = [x for x in r.matched_rules if x in known_rules]
         r.risk_id = f"R{len(result) + 1:02d}"
         r.clause_no = clause.clause_no
+        r.sub_item_no = _normalize_subitem(r.sub_item_no, r.suggestion, r.clause_id)
         result.append(r)
     return result, salvaged
 

@@ -1,6 +1,11 @@
 import { defineStore } from 'pinia'
 import api from '../api'
-import { bestMatchSegments, spliceReplacedSegments } from './review-diff'
+import {
+  bestMatchSegments,
+  spliceReplacedSegments,
+  replaceParagraphText,
+  SUBITEM_RE,
+} from './review-diff'
 
 export const useReviewStore = defineStore('review', {
   state: () => ({
@@ -128,11 +133,72 @@ export const useReviewStore = defineStore('review', {
       )
     },
 
+    /** 把 finalText 头部补上 subNo 编号前缀（若原行以 X.Y 开头而 finalText 没有） */
+    _ensureSubItemNoForText(originalText, finalText) {
+      const orig = (originalText || '').trim()
+      const text = (finalText || '').replace(/^\s+/, '')
+      const origMatch = SUBITEM_RE.exec(orig)
+      const newMatch = SUBITEM_RE.exec(text)
+      if (!origMatch) return text
+      if (newMatch) return text
+      return `${origMatch[0]}${text}`
+    },
+
+    /** 按行替换原 text 中的目标行，返回新的 text。
+     * - 若 subNo 非空，定位原 text 中以该编号开头的行替换；
+     * - 若 finalText 不带原编号，自动把原编号前缀补回去；
+     * - 若无 subNo 且 finalText 是单段带 X.Y，回退到按该 X.Y 处理；
+     * - 其它情况按段数对齐原行替换。
+     */
+    _applyLineReplace(originalText, subNo, finalText) {
+      const lines = originalText
+        .split(/\r?\n/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+      const newLines = finalText
+        .split(/\r?\n/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+      if (!lines.length) return newLines.join('\n')
+
+      // 命中子项编号 → 替换原 text 中以该编号开头的行
+      if (subNo) {
+        const re = new RegExp(`^${subNo.replace(/\./g, '\\.')}[\\s　:：、]`)
+        let replaced = false
+        const out = lines.map((ln) => {
+          if (!replaced && re.test(ln)) {
+            replaced = true
+            return this._ensureSubItemNoForText(ln, finalText)
+          }
+          return ln
+        })
+        if (replaced) return out.join('\n')
+        // 没找到原行 → 追加（也补编号）
+        out.push(this._ensureSubItemNoForText('', finalText))
+        return out.join('\n')
+      }
+
+      // 无 subNo 且 finalText 单段：尝试从前缀抓 X.Y 编号
+      if (newLines.length === 1) {
+        const m = SUBITEM_RE.exec(newLines[0])
+        if (m) return this._applyLineReplace(originalText, m[1], newLines[0])
+      }
+
+      // 兜底：多段 finalText 按段数对齐原行（保留行结构，避免整段覆盖）
+      const out = [...lines]
+      for (let i = 0; i < newLines.length && i < out.length; i++) {
+        out[i] = newLines[i]
+      }
+      return out.join('\n')
+    },
+
     /** 把某条款下所有 accepted/modified 决策依次套用到原始内容上，得到最新 html/text */
     _rebuildClauseHtml(clauseId) {
       const original = this.originalClauses[clauseId]
       const idx = this.clauses.findIndex((c) => c.clause_id === clauseId)
       if (!original || idx < 0) return
+
+      const clause = this.clauses[idx]
 
       const decisionsForClause = Object.values(this.decisions)
         .filter((d) => {
@@ -155,19 +221,27 @@ export const useReviewStore = defineStore('review', {
       for (const d of decisionsForClause) {
         const finalText = (d.text || '').trim()
         if (!finalText) continue
-        const segments = finalText
-          .split(/\r?\n/)
-          .map((s) => s.trim())
-          .filter(Boolean)
-        const matches = bestMatchSegments(text, segments)
-        html = spliceReplacedSegments(html, matches)
-        // text 同步替换，便于下一轮决策继续在最新文本上做相似度匹配
-        text = segments.join('\n')
+        const risk = this.risks.find((r) => r.risk_id === d.risk_id)
+        const subNo = d.sub_item_no || risk?.sub_item_no || ''
+        if (subNo) {
+          // 精确按子项编号替换：保留原 <p> 开标签 + 样式
+          html = replaceParagraphText(html, subNo, finalText)
+        } else {
+          // 兜底：Jaccard 多段匹配（保留旧实现以兼容整条款风险）
+          const segments = finalText
+            .split(/\r?\n/)
+            .map((s) => s.trim())
+            .filter(Boolean)
+          const matches = bestMatchSegments(text, segments)
+          html = spliceReplacedSegments(html, matches)
+        }
+        // text 按行替换：仅替换以 subNo 开头的行，避免整条款 text 被覆盖
+        text = this._applyLineReplace(text, subNo, finalText)
       }
 
       this.clauses = [
         ...this.clauses.slice(0, idx),
-        { ...this.clauses[idx], html, text },
+        { ...clause, html, text },
         ...this.clauses.slice(idx + 1),
       ]
     },
@@ -179,6 +253,7 @@ export const useReviewStore = defineStore('review', {
         type,
         text: payload.text ?? (type === 'accepted' ? risk.suggestion : null),
         reason: payload.reason ?? null,
+        sub_item_no: payload.sub_item_no ?? risk.sub_item_no ?? null,
       }
       this.decisions = { ...this.decisions, [risk.risk_id]: decision }
       // 基于原始内容重新应用该条款所有决策（防止叠加漂移）

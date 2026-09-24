@@ -8,7 +8,7 @@ venv/
 node_modules/
 dist/
 
-# 环境与密钥
+# 环境与密钥（.env 永不入库，GitHub 上也不存在）
 .env
 *.env.local
 
@@ -18,8 +18,13 @@ exmple/
 faheng-web/sample.json
 faheng-web/upload.json
 生成、导出word保真方案.md
+项目总结.md
+AI合同智能处理系统_技术方案.md
+_test_sig.docx
+*.tar
 
-# IDE / 系统
+# Claude Code / IDE / 系统
+.claude/
 .idea/
 .vscode/
 *.swp

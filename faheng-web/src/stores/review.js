@@ -183,9 +183,7 @@ export const useReviewStore = defineStore('review', {
       this.decisions = { ...this.decisions, [risk.risk_id]: decision }
       // 基于原始内容重新应用该条款所有决策（防止叠加漂移）
       this._rebuildClauseHtml(risk.clause_id)
-      // 跳到下一条待处理
-      const next = this.visibleRisks.find((r) => r.risk_id !== risk.risk_id)
-      if (next) this.currentRiskId = next.risk_id
+      // 保持当前选中不跳转，便于用户在正文中直接确认绿色修改框
       await api.put(`/review/${this.reviewId}/decisions`, {
         decisions: Object.values(this.decisions),
       })

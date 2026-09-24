@@ -18,6 +18,24 @@ function scrollToClause(clauseId) {
 }
 
 defineExpose({ scrollToClause })
+
+/** 条款块的状态类：红/橙 = 当前选中且待处理，绿 = 已采纳/修改（提示修改落点） */
+function clauseClasses(c) {
+  const cur = store.currentRisk
+  const isCurrent = cur?.clause_id === c.clause_id
+  const curDecided =
+    isCurrent && ['accepted', 'modified'].includes(store.decisions[cur.risk_id]?.type)
+  return {
+    'active-high': isCurrent && cur.level === 'high' && !curDecided,
+    'active-medium': isCurrent && cur.level === 'medium' && !curDecided,
+    'active-decided': curDecided,
+    decided: store.risks.some(
+      (r) =>
+        r.clause_id === c.clause_id &&
+        ['accepted', 'modified'].includes(store.decisions[r.risk_id]?.type),
+    ),
+  }
+}
 </script>
 
 <template>
@@ -42,17 +60,7 @@ defineExpose({ scrollToClause })
           :key="c.clause_id"
           :id="`clause-${c.clause_id}`"
           class="clause-block"
-          :class="{
-            'active-high':
-              store.currentRisk?.clause_id === c.clause_id && store.currentRisk?.level === 'high',
-            'active-medium':
-              store.currentRisk?.clause_id === c.clause_id && store.currentRisk?.level === 'medium',
-            decided: store.risks.some(
-              (r) =>
-                r.clause_id === c.clause_id &&
-                ['accepted', 'modified'].includes(store.decisions[r.risk_id]?.type),
-            ),
-          }"
+          :class="clauseClasses(c)"
           v-html="c.html || c.text"
         />
         <!-- 签署栏：不参与审查，导出原样保留 -->
@@ -231,5 +239,11 @@ defineExpose({ scrollToClause })
 
 .hidden {
   display: none;
+}
+
+/* 已采纳/修改后：条款块整体绿框（用户反馈：不能只有打钩，要看得到改了哪里） */
+.paper :deep(.clause-block.active-decided) {
+  background: #e8f8f2;
+  box-shadow: inset 3px 0 0 #27ae60;
 }
 </style>

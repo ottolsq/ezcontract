@@ -22,6 +22,14 @@ class Settings:
 
     RULES_PATH: Path = BASE_DIR / "rules" / "erp_rules.md"
 
+    # contract-copilot.skill 本地知识库路径（Plan A：Prompt 升级注入用）
+    SKILL_DIR: Path = BASE_DIR / "skills" / "contract-copilot.skill"
+    REVIEW_FRAMEWORK_PATH: Path = SKILL_DIR / "references" / "review-framework.md"
+    CONTRACT_ROUTING_PATH: Path = SKILL_DIR / "references" / "contract-routing.md"
+    PRIORITY_CLAUSES_PATH: Path = SKILL_DIR / "references" / "priority-clauses.md"
+    CLAUSE_LIBRARY_PATH: Path = SKILL_DIR / "templates" / "clause-library.md"
+    CONTRACT_TYPES_DIR: Path = SKILL_DIR / "references" / "contract-types"
+
     # 审查分批参数
     BATCH_MAX_CLAUSES: int = 8
     BATCH_MAX_CHARS: int = 2500

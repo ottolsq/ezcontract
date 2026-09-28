@@ -22,6 +22,36 @@ MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
 ALLOWED_EXT = {".docx", ".pdf"}
 
 
+# 关键词 → 12 类合同目录 key（与 skill_refs._TYPE_INDEX 对齐）
+_TYPE_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "01-sale": ("买卖", "采购", "购销", "sale", "purchase"),
+    "02-lease": ("租赁", "lease", "rent", "rental"),
+    "03-service": ("服务", "委托", "承揽", "外包", "service", "outsource", "consult"),
+    "05-guarantee": ("担保", "保证", "guarantee", "surety"),
+    "06-lending-gift": ("借款", "贷款", "借贷", "赠与", "loan", "lend"),
+    "07-internet": ("互联网", "平台", "在线", "saas", "app", "网站", "internet"),
+    "09-employment": ("劳动合同", "用工", "雇佣", "employment", "labor"),
+    "10-real-estate": ("房地产", "房产", "real-estate", "property"),
+    "11-construction": ("工程", "施工", "建设", "construction", "build"),
+    "12-corporate-investment": ("投资", "股权", "增资", "investment", "equity"),
+}
+
+
+def _infer_contract_type(session: ReviewSession) -> str | None:
+    """从文件名 + 首条款前文本中粗略推断合同类型 key（如 '03-service'）。
+
+    Plan A 的轻量增强：未命中时返回 None，回落到通用 skill 参考注入。
+    """
+    name = (session.filename or "").lower()
+    head = (session.preamble_text or "")[:400]
+    text = (name + " " + head).lower()
+    for key, words in _TYPE_KEYWORDS.items():
+        for w in words:
+            if w.lower() in text:
+                return key
+    return None
+
+
 def new_review_id() -> str:
     return uuid.uuid4().hex[:12]
 
@@ -154,6 +184,7 @@ async def run_review(session: ReviewSession) -> None:
         all_risks: list[RiskItem] = []
         salvaged_any = False
         total = len(batches)
+        contract_type = _infer_contract_type(session)
 
         for i, batch in enumerate(batches):
             session.stage = f"比对规则库，审查条款批次 {i + 1}/{total}（{batch[0].clause_no} 起）"
@@ -161,7 +192,7 @@ async def run_review(session: ReviewSession) -> None:
 
             try:
                 out = await chat_json(
-                    build_review_prompt(_clauses_text(batch)),
+                    build_review_prompt(_clauses_text(batch), contract_type=contract_type),
                     schema=ReviewLLMOut,
                     temperature=settings.REVIEW_TEMPERATURE,
                     max_tokens=settings.REVIEW_MAX_TOKENS,

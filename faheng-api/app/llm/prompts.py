@@ -3,10 +3,15 @@ from __future__ import annotations
 
 from app.schemas.draft import DraftGenerateIn
 from app.services.rules import Rule, get_rules
+from app.services.skill_refs import get_skill_references
 
 REVIEW_SYSTEM = (
-    "你是一名资深企业法务，立场为甲方（采购方），负责审查ERP软件采购类合同。"
-    "你的任务是严格按给定的《审核规则库》逐条对照合同条款识别风险。"
+    "你是一名资深企业法务，默认立场为甲方（采购方/委托方）。\n"
+    "你必须严格遵循给定的《审查框架》进行三层（宏观-中观-微观）四步（澄清-扫描-落地-复核）合同审查：\n"
+    "1) 先用《审查框架》的通用风险清单扫描合同结构与高风险条款；\n"
+    "2) 再用《合同类型路由》和《优先审查条款》核对当前合同类型下的高风险条款；\n"
+    "3) 必要时从《条款库》抽取可直接整段替换原条款的规范措辞；\n"
+    "4) 最后仍要对照《审核规则库》逐条确认 ERP 软件采购类条款是否有遗漏。\n"
     "只输出 JSON，不输出任何解释、markdown 代码块或其他文本。"
 )
 
@@ -43,29 +48,60 @@ def _format_rules(rules: list[Rule]) -> str:
     return "\n".join(lines)
 
 
-def build_review_prompt(clauses_text: str) -> list[dict]:
-    """审查 prompt：规则库全量注入 + 本批条款 + JSON schema + 硬性约束"""
+def _truncate(text: str, limit: int = 6000) -> str:
+    """长参考文档截断，避免一次性塞太多 token"""
+    if not text:
+        return ""
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "\n\n（参考文档过长，已截断，请按当前 batch 条款相关性选用）"
+
+
+def build_review_prompt(
+    clauses_text: str,
+    contract_type: str | None = None,
+) -> list[dict]:
+    """审查 prompt：skill 知识库 + ERP 规则库 + 本批条款 + JSON schema + 硬性约束"""
     rules = get_rules()
-    user = f"""## 审核规则库（共{len(rules)}条，全部规则如下）
-{_format_rules(rules)}
+    refs = get_skill_references(contract_type)
 
-## 待审查条款（clause_id 为条款唯一编号，输出时必须原样引用）
-{clauses_text}
+    sections: list[str] = []
+    if refs["review_framework"]:
+        sections.append(f"## 审查框架（三层 / 四步 / 通用风险清单）\n{_truncate(refs['review_framework'], 6000)}")
+    if refs["contract_routing"]:
+        sections.append(f"## 合同类型路由\n{_truncate(refs['contract_routing'], 4000)}")
+    if refs["priority_clauses"]:
+        sections.append(f"## 优先审查条款\n{_truncate(refs['priority_clauses'], 3000)}")
+    if refs["clause_library"]:
+        sections.append(f"## 推荐条款库（参考措辞，按需选用）\n{_truncate(refs['clause_library'], 6000)}")
+    if refs["contract_type_ref"]:
+        sections.append(f"## 当前合同类型专项参考\n{_truncate(refs['contract_type_ref'], 4000)}")
+    if contract_type:
+        sections.append(f"（当前合同类型提示：{contract_type}）")
 
-## 任务
-逐条对照规则库识别风险条款，输出 JSON（risks 为数组，未发现风险时为空数组）：
-{RISK_SCHEMA_HINT}
-
-## 子项编号
-{SUBITEM_NO_HINT}
-
-## 硬性约束
-1. clause_id 只能取自上述编号，不得编造
-2. matched_rules 只能引用规则库中的规则号；确有风险但规则库未覆盖时可为空数组
-3. suggestion 必须是完整条款文本（不是修改意见），将直接整段替换原条款
-4. 未命中风险的条款不要输出；宁缺勿滥，不确定的不输出
-5. 每个 JSON 对象必须完整闭合；若条款较多，只输出最重要的风险项
-6. issue/impact 用简体中文"""
+    user_parts = ["\n\n".join(sections)] if sections else []
+    user_parts.append(
+        f"## 既有审核规则库（共{len(rules)}条，全部规则如下）\n{_format_rules(rules)}"
+    )
+    user_parts.append(
+        "## 待审查条款（clause_id 为条款唯一编号，输出时必须原样引用）\n"
+        + clauses_text
+    )
+    user_parts.append(
+        f"## 任务\n逐条对照以上参考与规则库识别风险条款，输出 JSON（risks 为数组，未发现风险时为空数组）：\n{RISK_SCHEMA_HINT}"
+    )
+    user_parts.append(f"## 子项编号\n{SUBITEM_NO_HINT}")
+    user_parts.append(
+        "## 硬性约束\n"
+        "1. clause_id 只能取自上述编号，不得编造\n"
+        "2. matched_rules 只能引用规则库中的规则号；确有风险但规则库未覆盖时可为空数组\n"
+        "3. suggestion 必须是完整条款文本（不是修改意见），将直接整段替换原条款\n"
+        "4. 未命中风险的条款不要输出；宁缺勿滥，不确定的不输出\n"
+        "5. 每个 JSON 对象必须完整闭合；若条款较多，只输出最重要的风险项\n"
+        "6. level 仅使用 high / medium / low（与现有 schema 保持一致）；若内部按 P0/P1/P2 思考，请先映射：P0=high, P1=medium, P2=low\n"
+        "7. issue/impact 用简体中文"
+    )
+    user = "\n\n".join(user_parts)
     return [
         {"role": "system", "content": REVIEW_SYSTEM},
         {"role": "user", "content": user},

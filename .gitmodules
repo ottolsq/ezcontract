@@ -1,0 +1,3 @@
+[submodule "faheng-api/skills/contract-copilot.skill"]
+	path = faheng-api/skills/contract-copilot.skill
+	url = https://github.com/cat-xierluo/contract-copilot.skill.git

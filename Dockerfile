@@ -26,6 +26,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY faheng-api/app ./app
 COPY faheng-api/scripts ./scripts
 COPY faheng-api/rules ./rules
+# contract-copilot.skill 知识库（git submodule 内容；
+# 构建时需保证仓库含 submodule 文件，否则 skill 注入静默失效）
+COPY faheng-api/skills ./skills
 
 # 构建期生成内置测试合同（sample 随镜像只读发布，运行时无副本）
 RUN python scripts/make_sample_docx.py \

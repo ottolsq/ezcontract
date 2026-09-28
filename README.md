@@ -23,6 +23,7 @@ LLM 网关（任意 OpenAI 兼容服务，模型需支持结构化输出）
 ```bash
 # 后端（终端 1）
 cd faheng-api
+git submodule update --init --recursive  # 首次：拉取 contract-copilot.skill 知识库
 pip install -r requirements.txt      # 首次
 python run.py                        # http://localhost:58069, Swagger: /docs
 
@@ -57,7 +58,8 @@ AUTH_TOKEN_TTL=86400
 多阶段构建（根目录 [Dockerfile](Dockerfile)）：`node:20-alpine` 构建前端 → `python:3.11-slim` 安装后端依赖并拷入业务代码与前端产物，**单个 uvicorn 进程同时 serve 前端静态页面与 API**（同源，端口 58069）。
 
 ```bash
-# 构建（仓库根目录执行）
+# 构建（仓库根目录执行；首次需先初始化 submodule）
+git submodule update --init --recursive
 docker build -t faheng:latest .
 
 # 运行（.env 按"配置"章节准备，放在当前目录）
@@ -67,6 +69,8 @@ docker run -d --name faheng --restart unless-stopped \
 # 探活
 curl http://127.0.0.1:58069/api/health
 ```
+
+> 构建时若缺少 submodule 内容（`faheng-api/skills/` 为空目录），`skill_refs.py` 会静默降级返回空参考，审查仍可运行但不会获得 skill 知识注入。建议 CI / 发布流程显式 `git submodule update --init`。
 
 镜像要点：
 
@@ -88,8 +92,11 @@ curl http://127.0.0.1:58069/api/health
 | 路径 | 说明 |
 |---|---|
 | `faheng-api/rules/erp_rules.md` | 审核规则库（26 条，改这个文件即换规则） |
+| `faheng-api/skills/contract-copilot.skill/` | 合同审查 skill（git submodule，升级审查 Prompt 的知识库） |
 | `faheng-api/app/parser/clause_splitter.py` | 中文合同"第X条"切分 + 条款内 X.Y 子项扫描（导出回填锚点） |
 | `faheng-api/app/llm/client.py` | LLM 结构化输出（清洗/重试/截断抢救） |
+| `faheng-api/app/llm/prompts.py` | 审查 Prompt 构造（注入 skill 三层/四步框架 + ERP 规则库 + 12 类合同专项参考） |
+| `faheng-api/app/services/skill_refs.py` | skill 参考加载器（带缓存，按合同类型解析 references/contract-types/） |
 | `faheng-api/app/services/docx_export.py` | 导出三路径：docx 就地替换（支持按子项编号精确替换段落）/ PDF 重建 / HTML→docx 保真转换（前端 WYSIWYG 导出） |
 | `faheng-api/scripts/make_sample_docx.py` | 生成埋坑测试合同（输出到项目根，构建期嵌入镜像） |
 | `faheng-web/src/stores/review.js` | 审查工作台状态机（五视图 + 决策乐观更新 + liveScore 风险分派生） |

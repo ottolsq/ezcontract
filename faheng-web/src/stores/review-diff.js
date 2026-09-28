@@ -215,6 +215,79 @@ function withReplacedClass(openTag) {
   return openTag.replace(/<p\b/, '<p class="replaced" ')
 }
 
+/** 在 anchor <p> 后/前插入新 <p>，样式复制 anchor 开标签。
+ *
+ * @param clauseHtml 原条款 HTML
+ * @param anchorSubItemNo 锚点子项编号（空字符串表示条款首/末尾）
+ * @param newText 新单位完整文本
+ * @param position 'after' | 'before'
+ * @returns 插入后的 HTML
+ */
+export function insertParagraphText(clauseHtml, anchorSubItemNo, newText, position = 'after') {
+  if (!clauseHtml) return clauseHtml
+  const paragraphs = splitParagraphs(clauseHtml)
+  const text = (newText || '').trim()
+  if (!text) return clauseHtml
+
+  // 没 <p> 兜底：直接包成新段落
+  if (!paragraphs.length) {
+    const block = `<p class="inserted">${escapeHtml(text)}</p>`
+    return position === 'before' ? `${block}${clauseHtml}` : `${clauseHtml}${block}`
+  }
+
+  // 定位锚点
+  let anchorIdx = -1
+  if (anchorSubItemNo) anchorIdx = findParagraphIndexBySubItemNo(clauseHtml, anchorSubItemNo)
+  if (anchorIdx < 0) {
+    // 兜底：尝试从 newText 开头抓 X.Y 编号作为锚点
+    const m = SUBITEM_RE.exec(text)
+    if (m) anchorIdx = findParagraphIndexBySubItemNo(clauseHtml, m[1])
+  }
+  if (anchorIdx < 0) anchorIdx = position === 'after' ? paragraphs.length - 1 : 0
+
+  const anchor = paragraphs[anchorIdx]
+  // 复制 anchor openTag，仅调整 class 标识 inserted
+  let newOpen = anchor.openTag
+  if (/<p\b/i.test(newOpen)) {
+    // 移除原 class 里的 replaced，追加 inserted
+    newOpen = newOpen.replace(/class\s*=\s*"([^"]*)"/i, (_, c) => {
+      const filtered = c.split(/\s+/).filter(Boolean).filter((x) => x !== 'replaced')
+      filtered.push('inserted')
+      return `class="${filtered.join(' ')}"`
+    })
+    if (!/class\s*=/i.test(newOpen)) {
+      newOpen = newOpen.replace(/<p\b/, '<p class="inserted"')
+    }
+  } else {
+    newOpen = '<p class="inserted">'
+  }
+  // 复制 anchor 的 span 包裹（保留字体/字号等行内样式）
+  const span = extractFirstSpanWrapper(anchor.innerHtml || '')
+  const safeText = ensureSubItemNo('', text) // 新单位自带编号，不强制补编号
+  const newP = {
+    raw: `${newOpen}${span.open}${escapeHtml(safeText)}${span.close}</p>`,
+    text: safeText,
+    openTag: newOpen,
+    innerHtml: `${span.open}${escapeHtml(safeText)}${span.close}`,
+  }
+
+  const insertAt = position === 'after' ? anchorIdx + 1 : anchorIdx
+  paragraphs.splice(insertAt, 0, newP)
+  return paragraphs.map((p) => p.raw).join('')
+}
+
+/** 删除指定子项 <p>，找不到子项编号时返回原 HTML（不删整条款，避免误删）。 */
+export function deleteParagraphText(clauseHtml, subItemNo) {
+  if (!clauseHtml) return clauseHtml
+  if (!subItemNo) return clauseHtml
+  const paragraphs = splitParagraphs(clauseHtml)
+  if (!paragraphs.length) return clauseHtml
+  const idx = findParagraphIndexBySubItemNo(clauseHtml, subItemNo)
+  if (idx < 0) return clauseHtml
+  paragraphs.splice(idx, 1)
+  return paragraphs.map((p) => p.raw).join('')
+}
+
 function escapeHtml(s) {
   return s
     .replace(/&/g, '&amp;')

@@ -38,6 +38,15 @@ class RiskItem(BaseModel):
     impact: str = Field(description="对甲方的影响，80字以内")
     suggestion: str = Field(description="完整、可直接替换原条款的条款文本")
     sub_item_no: str = Field(default="", description="风险指向的子项编号（如 5.3），无法定位或针对整条款时留空")
+    # Plan B：精确编辑指令（向后兼容默认 replace）
+    # - replace:     替换 clause_id ( + 可选 sub_item_no ) 对应的单位
+    # - insert_after / insert_before: 在 anchor_clause_id ( + 可选 anchor_sub_item_no ) 后/前插入新单位
+    # - delete:      删除 clause_id ( + 可选 sub_item_no ) 对应的单位
+    operation: Literal["replace", "insert_after", "insert_before", "delete"] = "replace"
+    anchor_clause_id: str = Field(default="", description="insert_* 时必填的锚点条款 id")
+    anchor_sub_item_no: str = Field(default="", description="insert_* 时可选的锚点子项编号")
+    new_clause_no: str = Field(default="", description="新增整条款时给出第X条编号")
+    new_clause_title: str = Field(default="", description="新增整条款时给出标题")
 
     # 后端补充字段
     risk_id: str = ""
@@ -58,6 +67,12 @@ class Decision(BaseModel):
     text: str | None = None  # accepted=suggestion 原文；modified=用户编辑后文本
     reason: str | None = None  # rejected 时可选原因
     sub_item_no: str | None = None  # 与 RiskItem.sub_item_no 对齐，便于导出/重渲染直接命中子项段落
+    # Plan B：透传 operation / anchor / new 字段，导出按单位执行
+    operation: Literal["replace", "insert_after", "insert_before", "delete"] | None = None
+    anchor_clause_id: str | None = None
+    anchor_sub_item_no: str | None = None
+    new_clause_no: str | None = None
+    new_clause_title: str | None = None
 
 
 class ReviewStats(BaseModel):

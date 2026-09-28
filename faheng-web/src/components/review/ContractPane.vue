@@ -59,6 +59,7 @@ function clauseClasses(c) {
           v-for="c in store.clauses"
           :key="c.clause_id"
           :id="`clause-${c.clause_id}`"
+          v-show="(c.html && c.html.trim()) || (c.text && c.text.trim())"
           class="clause-block"
           :class="clauseClasses(c)"
           v-html="c.html || c.text"

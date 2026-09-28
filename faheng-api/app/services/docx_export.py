@@ -5,6 +5,10 @@
 ④ 起草 HTML → docx 高保真映射（前端 TipTap WYSIWYG 导出，主路径）
 另含审核报告导出。
 
+Plan B：精确按单位编辑 —— 决策中携带 operation / anchor 信息，
+导出时按 (clause_id, sub_item_no, operation) 组成 EditAction，
+按文档绝对位置排序后从后往前应用，避免下标漂移。
+
 无状态化：所有导出函数返回 ``io.BytesIO``，不落盘。
 """
 from __future__ import annotations
@@ -12,6 +16,7 @@ from __future__ import annotations
 import io
 import re
 from copy import deepcopy
+from dataclasses import dataclass
 
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 from docx.oxml.ns import qn
@@ -97,8 +102,10 @@ def _set_east_asia(run, font_name: str = _BODY_FONT_NAME) -> None:
 
 
 def _replace_paragraph_text(paragraph, text: str) -> None:
-    """保样式替换段落文本：保留首 run 的字体属性，清空其余 run"""
-    runs = paragraph.runs
+    """保样式替换段落文本：保留首个 run 的字体属性作为新文本样式，
+    清空其余 run/hyperlink 内的所有 w:t，确保旧文本不残留。
+    """
+    runs = list(paragraph.runs)
     if runs:
         runs[0].text = text
         for r in runs[1:]:
@@ -106,6 +113,26 @@ def _replace_paragraph_text(paragraph, text: str) -> None:
     else:
         run = paragraph.add_run(text)
         _set_east_asia(run)
+    # 兜底：遍历 paragraph 内所有 w:t（包括嵌套在 w:hyperlink / w:fldSimple 等容器内的），
+    # 如果有 w:t 不在 paragraph.runs 列表内（python-docx 没识别的容器），强制清空。
+    # 这是「前后内容都存在」类 bug 的根因修复。
+    body_runs = paragraph._p.findall(qn("w:r"))
+    first_run_text_set = False
+    for r in body_runs:
+        for t in r.findall(qn("w:t")):
+            if not first_run_text_set:
+                t.text = text
+                first_run_text_set = True
+                t.set(qn("xml:space"), "preserve")
+            else:
+                t.text = ""
+    # hyperlink 内的 run/w:t：xpath 递归找所有嵌套的 w:t 清空
+    for hl in paragraph._p.findall(qn("w:hyperlink")):
+        for t in hl.iter(qn("w:t")):
+            t.text = ""
+    for fs in paragraph._p.findall(qn("w:fldSimple")):
+        for t in fs.iter(qn("w:t")):
+            t.text = ""
 
 
 # ---------- 段落级相似度匹配（导出回填用） ----------
@@ -128,119 +155,408 @@ def _paragraph_similarity(a: str, b: str) -> float:
     return inter / (len(sa) + len(sb) - inter)
 
 
-# ---------- 路径①：DOCX 就地替换 ----------
+# ---------- Plan B：EditAction 调度 ----------
 
-LEVEL_ORDER = {"high": 0, "medium": 1, "low": 2}
+# 单条精确编辑动作（按单位语义：replace / insert_* / delete）。
+# sort_key 是文档绝对位置（段落下标；insert_after 取锚点+0.5），调度层先按 sort_key
+# 升序收集，再在应用层倒序遍历，避免下标漂移。
+@dataclass
+class EditAction:
+    operation: str  # "replace" | "insert_after" | "insert_before" | "delete"
+    # replace / delete 时的目标
+    target_clause_id: str = ""
+    target_sub_item_no: str = ""
+    # insert_* 时的锚点
+    anchor_clause_id: str = ""
+    anchor_sub_item_no: str = ""
+    # 新内容（delete 时可为空）
+    new_text: str = ""
+    # 仅用于排序（不参与语义）
+    sort_key: float = 0.0
+    # 仅用于日志
+    level: str = "medium"
+    risk_id: str = ""
 
 
-def _decided_replacements(session: ReviewSession) -> dict[str, list[str]]:
-    """按条款聚合最终替换文本。
+def _build_edit_plan(session: ReviewSession) -> list[EditAction]:
+    """把所有 accepted / modified 决策转换为 EditAction，并赋文档级 sort_key。
 
-    同一条款多个已采纳/修改的风险：按等级从高到低，各替换文本合并为多段。
-    rejected / 未决策：不替换。
+    - replace / delete 的 sort_key 取该单位的 start_idx（命中 sub_item_no 时）或所在 clause.start_idx。
+    - insert_before 取锚点 sort_key；insert_after 取锚点 + 0.5。
+    - 跨条款 insert：anchor_clause_id != risk.clause_id 时，sort_key 仍按锚点 clause 计算，
+      这样调度时插入的 paragraph 会落到 anchor clause 段内（导出结果正确）。
+    - sort_key 冲突时（同一段同时 insert_after + insert_before），按字典序 stable。
     """
     risk_map = {r.risk_id: r for r in session.risks}
-    by_clause: dict[str, list[tuple[int, str]]] = {}
+    clause_map = {c.clause_id: c for c in session.clauses}
+    actions: list[EditAction] = []
     for d in session.decisions.values():
         if d.type not in ("accepted", "modified"):
             continue
-        risk = risk_map.get(d.risk_id)
-        if risk is None:
+        r = risk_map.get(d.risk_id)
+        if r is None:
             continue
-        text = (d.text or "").strip() or risk.suggestion
-        by_clause.setdefault(risk.clause_id, []).append(
-            (LEVEL_ORDER.get(risk.level, 3), text)
+        op = (d.operation or r.operation or "replace").strip()
+        target_cid = r.clause_id
+        target_sub = (d.sub_item_no or r.sub_item_no or "").strip()
+        anchor_cid = (d.anchor_clause_id or r.anchor_clause_id or "").strip() or target_cid
+        anchor_sub = (d.anchor_sub_item_no or r.anchor_sub_item_no or "").strip()
+        new_text = (d.text or "").strip() or (r.suggestion or "").strip()
+        if op != "delete" and not new_text:
+            continue
+
+        sort_key = 0.0
+        if op in ("replace", "delete"):
+            clause = clause_map.get(target_cid)
+            if clause:
+                sort_key = float(_subitem_or_clause_idx(clause, target_sub))
+        elif op == "insert_before":
+            clause = clause_map.get(anchor_cid)
+            if clause:
+                sort_key = float(_subitem_or_clause_idx(clause, anchor_sub))
+        elif op == "insert_after":
+            clause = clause_map.get(anchor_cid)
+            if clause:
+                sort_key = float(_subitem_or_clause_idx(clause, anchor_sub)) + 0.5
+
+        actions.append(
+            EditAction(
+                operation=op,
+                target_clause_id=target_cid,
+                target_sub_item_no=target_sub,
+                anchor_clause_id=anchor_cid,
+                anchor_sub_item_no=anchor_sub,
+                new_text=new_text,
+                sort_key=sort_key,
+                level=r.level,
+                risk_id=r.risk_id,
+            )
         )
-    return {
-        cid: [t for _, t in sorted(items, key=lambda x: x[0])]
-        for cid, items in by_clause.items()
-    }
+    # 升序；同 docx 下子项编号字典序作为稳定 tie-breaker，避免顺序漂移
+    actions.sort(key=lambda a: (a.sort_key, a.target_sub_item_no, a.anchor_sub_item_no, a.operation))
+    return actions
+
+
+def _subitem_or_clause_idx(clause: Clause, sub_no: str) -> int:
+    """优先取 sub_item_no 段落下标；未命中回落到 clause.start_idx。"""
+    if sub_no:
+        for s in clause.subitems:
+            if s.sub_item_no == sub_no:
+                return s.start_idx
+    return clause.start_idx
+
+
+# ---------- 路径①：DOCX 就地替换 ----------
+
+
+def _apply_action_to_doc(doc, action: EditAction, clause_map: dict) -> None:
+    """把单个 EditAction 落到 docx 段落。
+    replace：替换目标段落文本（保留原样式）。
+    insert_*：在锚点段落之后/前插入新段落，复制锚点段落样式。
+    delete：删除目标段落（命中子项）或整个 clause 段区（整条款删除）。
+    """
+    paras = doc.paragraphs
+
+    if action.operation == "replace":
+        clause = clause_map.get(action.target_clause_id)
+        if not clause:
+            return
+        idx = _resolve_target_idx(clause, action.target_sub_item_no)
+        if idx is None or idx >= len(paras):
+            return
+        text = action.new_text
+        # 若原段落以 X.Y 编号开头而新文本不带，自动补回编号
+        orig_match = _SUBITEM_RE.match(paras[idx].text or "")
+        if orig_match and not _SUBITEM_RE.match(text):
+            text = f"{orig_match.group(0)}{text.lstrip()}"
+        _replace_paragraph_text(paras[idx], text)
+        return
+
+    if action.operation == "delete":
+        clause = clause_map.get(action.target_clause_id)
+        if not clause:
+            return
+        if action.target_sub_item_no:
+            idx = _resolve_target_idx(clause, action.target_sub_item_no)
+            if idx is None:
+                return
+            _delete_paragraphs(paras, [idx])
+            return
+        # 整条款删除：清空 clause 区间内所有段落文本（保留段落本身以保版式）
+        # 真正的整条款删除风险由 _postprocess 拦截，几乎不会到这里；保留兜底
+        _clear_paragraphs(paras, clause.start_idx, clause.end_idx)
+        return
+
+    if action.operation in ("insert_after", "insert_before"):
+        clause = clause_map.get(action.anchor_clause_id or action.target_clause_id)
+        if not clause:
+            return
+        anchor_idx = _resolve_target_idx(clause, action.anchor_sub_item_no)
+        if anchor_idx is None:
+            return
+        # 多行新内容（如"第X条 标题\nX.1 ...\nX.2 ..."）拆成多段插入，每段按角色套样式。
+        for offset, line in enumerate(_split_insert_text(action.new_text)):
+            insert_pos = anchor_idx + offset if action.operation == "insert_after" else anchor_idx - 1 - offset
+            # insert_before 顺序反着插（让最终顺序正确）
+            if action.operation == "insert_before":
+                _insert_paragraph_before_idx(paras, anchor_idx - offset, line)
+            else:
+                _insert_paragraph_after(paras, insert_pos, line)
+        return
+
+
+def _resolve_target_idx(clause: Clause, sub_no: str) -> int | None:
+    """返回目标段落下标：优先 sub_item_no；未命中则返回 clause.start_idx。"""
+    if sub_no:
+        for s in clause.subitems:
+            if s.sub_item_no == sub_no:
+                return s.start_idx
+    if clause.start_idx < 0:
+        return None
+    return clause.start_idx
+
+
+def _delete_paragraphs(paras: list, indices: list[int]) -> None:
+    """按 _p 元素从底层 XML 删除段落。indices 必须倒序调用避免下标漂移。"""
+    body = paras[0]._element.getparent()
+    for idx in sorted(set(indices), reverse=True):
+        if 0 <= idx < len(paras):
+            body.remove(paras[idx]._element)
+
+
+def _clear_paragraphs(paras: list, start: int, end: int) -> None:
+    """清空段落文本（保段落节点）；整条款删除兜底。"""
+    for i in range(start, end + 1):
+        if 0 <= i < len(paras):
+            _replace_paragraph_text(paras[i], "")
+
+
+def _split_insert_text(text: str) -> list[str]:
+    """把 insert_* 的 new_text 按换行拆成多段；空段过滤掉。
+
+    例如 "第十二条 数据安全与保密\\n12.1 乙方应...\\n12.2 任何..." →
+    ["第十二条 数据安全与保密", "12.1 乙方应...", "12.2 任何..."]
+    """
+    if not text:
+        return []
+    return [ln.strip() for ln in text.splitlines() if ln.strip()]
+
+
+def _insert_paragraph_before_idx(paras: list, before_idx: int, text: str) -> None:
+    """在 before_idx 之前插入新段落（复制 before_idx 原段落样式）。
+
+    是 `_insert_paragraph_after` 的反向版本：先克隆 before_idx 原段落，
+    但所有修改（清空旧 run、按角色套样式、写新 run）与 after 版一致，
+    然后用 `addprevious` 锚定到原段落之前。
+    """
+    from copy import deepcopy as _deepcopy
+
+    if not paras:
+        return
+    if before_idx < 0:
+        before_idx = 0
+    if before_idx >= len(paras):
+        # 越界：退化为追加到最后一段之后
+        _insert_paragraph_after(paras, len(paras) - 1, text)
+        return
+
+    target = paras[before_idx]
+    anchor_el = target._element
+
+    new_p = _deepcopy(anchor_el)
+    for r in new_p.findall(qn("w:r")):
+        for t in r.findall(qn("w:t")):
+            t.text = ""
+        new_p.remove(r)
+    # hyperlink / fldSimple 嵌套的 w:t：用递归 iter 清空（qn 不支持复合路径）
+    for hl in new_p.findall(qn("w:hyperlink")):
+        for t in hl.iter(qn("w:t")):
+            t.text = ""
+    for fs in new_p.findall(qn("w:fldSimple")):
+        for t in fs.iter(qn("w:t")):
+            t.text = ""
+
+    stripped = (text or "").lstrip()
+    if _SUBITEM_RE.match(stripped):
+        ea_font = _HEADING_FONT_NAME
+        run_size = _BODY_FONT_SIZE
+        run_bold = False
+        _remove_first_line_indent_from(new_p)
+        pPr = new_p.find(qn("w:pPr"))
+        if pPr is not None:
+            jc = pPr.find(qn("w:jc"))
+            if jc is None:
+                jc = pPr.makeelement(qn("w:jc"), {})
+                pPr.append(jc)
+            jc.set(qn("w:val"), "left")
+    elif re.match(r"^[\s　]*第[一二三四五六七八九十百零〇\d]+条", stripped):
+        ea_font = _HEADING_FONT_NAME
+        run_size = Pt(14)
+        run_bold = True
+        _remove_first_line_indent_from(new_p)
+        pPr = new_p.find(qn("w:pPr"))
+        if pPr is not None:
+            jc = pPr.find(qn("w:jc"))
+            if jc is None:
+                jc = pPr.makeelement(qn("w:jc"), {})
+                pPr.append(jc)
+            jc.set(qn("w:val"), "left")
+    else:
+        ea_font = _BODY_FONT_NAME
+        run_size = _BODY_FONT_SIZE
+        run_bold = False
+
+    run = new_p.makeelement(qn("w:r"), {})
+    rpr = run.makeelement(qn("w:rPr"), {})
+    rfonts = rpr.makeelement(
+        qn("w:rFonts"),
+        {
+            qn("w:ascii"): "Times New Roman",
+            qn("w:hAnsi"): "Times New Roman",
+            qn("w:eastAsia"): ea_font,
+        },
+    )
+    rpr.append(rfonts)
+    if run_bold:
+        rpr.append(rpr.makeelement(qn("w:b"), {}))
+    if run_size is not None and run_size != _BODY_FONT_SIZE:
+        rpr.append(rpr.makeelement(qn("w:sz"), {qn("w:val"): str(int(run_size.pt * 2))}))
+    run.append(rpr)
+    t_el = run.makeelement(qn("w:t"), {})
+    t_el.text = text or ""
+    t_el.set(qn("xml:space"), "preserve")
+    run.append(t_el)
+    new_p.append(run)
+
+    anchor_el.addprevious(new_p)
+
+
+def _insert_paragraph_after(paras: list, after_idx: int, text: str) -> None:
+    """在 after_idx 之后插入新段落，复制其后一个原段落样式（一般继承 anchor 段落）。
+
+    新增样式规则（与前端 .docx-prose / 起草导出路径严格对齐）：
+    - 段落角色 = 子项 X.Y（文本以 X.Y 开头）→ 黑体 + 12pt 顶格左对齐，无首行缩进；
+    - 段落角色 = 条款标题 第X条（文本以「第X条」开头）→ 黑体 + 14pt 顶格左对齐，无首行缩进；
+    - 其他 → 正文样式（仿宋 + 12pt + 首行缩进 2 字符 + 1.5 倍行距）。
+
+    实现：deepcopy 锚点 _element（继承 pPr：行距/对齐/缩进），
+    清空所有 w:r/w:hyperlink/w:fldSimple 内的 w:t（含原有残留），
+    按新文本角色写入 run，run 显式带 rPr + rFonts（新字体为黑体或仿宋）。
+    """
+    from copy import deepcopy as _deepcopy
+
+    # 决定目标段落（用于 insert_after 取 after_idx 之后的下一段作为 anchor_el）
+    if after_idx < 0:
+        target = paras[0]
+    elif after_idx >= len(paras) - 1:
+        target = paras[after_idx]  # 追加到末尾：用最后一段作 anchor_el
+    else:
+        target = paras[after_idx + 1]
+    anchor_el = target._element
+
+    new_p = _deepcopy(anchor_el)
+    # 清空所有原有的 run/hyperlink/fldSimple 内的 w:t（避免 deepcopy 把旧内容带过去）
+    for r in new_p.findall(qn("w:r")):
+        for t in r.findall(qn("w:t")):
+            t.text = ""
+        # 旧 run 完全清空后 remove 掉（避免在最后 run 之前累积残留 w:r）
+        new_p.remove(r)
+    # hyperlink / fldSimple 嵌套的 w:t：用递归 iter 清空（qn 不支持复合路径）
+    for hl in new_p.findall(qn("w:hyperlink")):
+        for t in hl.iter(qn("w:t")):
+            t.text = ""
+    for fs in new_p.findall(qn("w:fldSimple")):
+        for t in fs.iter(qn("w:t")):
+            t.text = ""
+
+    # 按新文本角色决定 run 样式
+    stripped = (text or "").lstrip()
+    if _SUBITEM_RE.match(stripped):  # X.Y 子项：黑体 + 12pt + 无首行缩进
+        ea_font = _HEADING_FONT_NAME
+        run_size = _BODY_FONT_SIZE
+        run_bold = False
+        _remove_first_line_indent_from(new_p)
+        # 左对齐、顶格
+        pPr = new_p.find(qn("w:pPr"))
+        if pPr is not None:
+            jc = pPr.find(qn("w:jc"))
+            if jc is None:
+                jc = pPr.makeelement(qn("w:jc"), {})
+                pPr.append(jc)
+            jc.set(qn("w:val"), "left")
+    elif re.match(r"^[\s　]*第[一二三四五六七八九十百零〇\d]+条", stripped):
+        # 第X条：黑体 + 14pt + 无首行缩进 + 顶格左对齐
+        ea_font = _HEADING_FONT_NAME
+        run_size = Pt(14)
+        run_bold = True
+        _remove_first_line_indent_from(new_p)
+        pPr = new_p.find(qn("w:pPr"))
+        if pPr is not None:
+            jc = pPr.find(qn("w:jc"))
+            if jc is None:
+                jc = pPr.makeelement(qn("w:jc"), {})
+                pPr.append(jc)
+            jc.set(qn("w:val"), "left")
+    else:
+        # 普通正文：仿宋 + 12pt + 首行缩进 2 字符 + 1.5 倍行距
+        ea_font = _BODY_FONT_NAME
+        run_size = _BODY_FONT_SIZE
+        run_bold = False
+
+    # 写新 run：rPr 内显式 rFonts（西文 Times New Roman + 中文 ea_font）
+    run = new_p.makeelement(qn("w:r"), {})
+    rpr = run.makeelement(qn("w:rPr"), {})
+    rfonts = rpr.makeelement(
+        qn("w:rFonts"),
+        {
+            qn("w:ascii"): "Times New Roman",
+            qn("w:hAnsi"): "Times New Roman",
+            qn("w:eastAsia"): ea_font,
+        },
+    )
+    rpr.append(rfonts)
+    if run_bold:
+        rpr.append(rpr.makeelement(qn("w:b"), {}))
+    if run_size is not None and run_size != _BODY_FONT_SIZE:
+        # 半磅为单位
+        rpr.append(rpr.makeelement(qn("w:sz"), {qn("w:val"): str(int(run_size.pt * 2))}))
+    run.append(rpr)
+    t_el = run.makeelement(qn("w:t"), {})
+    t_el.text = text or ""
+    t_el.set(qn("xml:space"), "preserve")
+    run.append(t_el)
+    new_p.append(run)
+
+    # 插入位置：after_idx 之后
+    if after_idx >= len(paras) - 1:
+        anchor_el.addnext(new_p)
+    else:
+        anchor_el.addprevious(new_p)
+
+
+def _remove_first_line_indent_from(p_el) -> None:
+    """去掉段落的 w:ind / w:firstLineChars / w:firstLine（无首行缩进）"""
+    pPr = p_el.find(qn("w:pPr"))
+    if pPr is None:
+        return
+    ind = pPr.find(qn("w:ind"))
+    if ind is not None:
+        pPr.remove(ind)
 
 
 def _replace_clause_span(doc, session: ReviewSession) -> None:
-    """把决策后的替换文本写回 docx 原件（段落级粒度：按 X.Y 子项编号精确替换）。
+    """把决策后的精确编辑指令写回 docx 原件（按 EditAction 排序，倒序应用）。
 
-    优先按 (clause_id, sub_item_no) 在 Clause.subitems 中查到原段落下标并就地替换，
-    保留原段落样式与编号；未命中子项编号时退回原 Jaccard 相似度匹配作为兜底。
+    取代旧的"按 Jaccard 兜底替换整段"实现：
+    - replace 命中子项编号时按段落下标精确替换；
+    - insert_* 在锚点段落后/前插入；
+    - delete 删除目标段落（命中子项时精确，命中整条款时清空区间）；
+    sort_key 已按文档绝对位置升序，应用层倒序避免下标漂移。
     """
-    from app.schemas.review import Decision
-
     clause_map = {c.clause_id: c for c in session.clauses}
-    replacements = _decided_replacements(session)
-    risk_map = {r.risk_id: r for r in session.risks}
-
-    paras = doc.paragraphs
-    # 决策文本（含 sub_item_no）—— 同一 risk 可能落到多段，仅 sub_item_no 命中段才就地替换
-    decision_lookup: dict[str, Decision] = session.decisions
-    for cid, new_texts in replacements.items():
-        clause = clause_map[cid]
-        # 子项编号 → 原段落下标（与 paras 下标对齐）
-        subitem_index: dict[str, int] = {
-            s.sub_item_no: s.start_idx for s in clause.subitems
-        }
-        clause_paras = paras[clause.start_idx : clause.end_idx + 1]
-
-        # 已替换过的子项编号：多决策命中同一子项时，后者覆盖前者
-        replaced_subitems: set[str] = set()
-        # 子项编号未命中的新段落：候选段列表（先打 used 标记，再走相似度兜底）
-        fallback_candidates: list[tuple[int, "Paragraph"]] = [
-            (clause.start_idx + i, p)
-            for i, p in enumerate(clause_paras)
-            if p.text.strip()
-        ]
-        used_fallback_idx: set[int] = set()
-
-        # 把"已采纳/修改"的每条风险先按 sub_item_no 拆成 (subitem_no, text) 对
-        flat_lines: list[tuple[str, str]] = []  # (subitem_no_or_empty, text)
-        for nt in new_texts:
-            for line in nt.splitlines():
-                line = line.strip()
-                if line:
-                    flat_lines.append(("", line))
-        # 上面 flat_lines 仅为兜底候选；下面重新按 decision 维度遍历以拿到 sub_item_no
-        decision_lines: list[tuple[str, str, str]] = []  # (subitem_no, level, line)
-        for d in decision_lookup.values():
-            if d.type not in ("accepted", "modified"):
-                continue
-            r = risk_map.get(d.risk_id)
-            if r is None or r.clause_id != cid:
-                continue
-            text = (d.text or "").strip() or r.suggestion
-            sub_no = (d.sub_item_no or r.sub_item_no or "").strip()
-            for line in text.splitlines():
-                line = line.strip()
-                if line:
-                    decision_lines.append((sub_no, r.level, line))
-
-        for sub_no, level, line in decision_lines:
-            # 1) 子项编号命中：直接就地替换
-            if sub_no and sub_no in subitem_index:
-                idx = subitem_index[sub_no]
-                if idx >= len(paras):
-                    continue
-                target_para = paras[idx]
-                # 若原段落以 X.Y 编号开头而新文本不带，自动补回编号（保留编号不丢）
-                orig_match = _SUBITEM_RE.match(target_para.text or "")
-                if orig_match and not _SUBITEM_RE.match(line):
-                    line = f"{orig_match.group(0)}{line.lstrip()}"
-                _replace_paragraph_text(target_para, line)
-                replaced_subitems.add(sub_no)
-                continue
-            # 2) 兜底：Jaccard 相似度匹配（保持旧实现行为，整条款风险/编号缺失时用）
-            best_pos = -1
-            best_score = 0.0
-            for pos, (orig_pos, p) in enumerate(fallback_candidates):
-                if orig_pos in used_fallback_idx:
-                    continue
-                s = _paragraph_similarity(p.text, line)
-                if s > best_score:
-                    best_score = s
-                    best_pos = pos
-            if best_score < 0.25 or best_pos < 0:
-                continue
-            orig_pos, target_para = fallback_candidates[best_pos]
-            used_fallback_idx.add(orig_pos)
-            _replace_paragraph_text(target_para, line)
+    actions = _build_edit_plan(session)
+    for action in reversed(actions):
+        _apply_action_to_doc(doc, action, clause_map)
 
 
 def export_docx_inplace(session: ReviewSession) -> io.BytesIO:
@@ -265,7 +581,19 @@ def _build_rebuilt_docx(session: ReviewSession) -> "object":
     from docx.enum.text import WD_ALIGN_PARAGRAPH
 
     doc = Document()
-    replacements = _decided_replacements(session)
+    actions = _build_edit_plan(session)
+    # 每个 EditAction 仅归属一个 bucket：
+    # - insert_*：归到 anchor_clause_id 桶（效果就是"在 anchor 处插入"）
+    # - replace / delete：归到 target_clause_id 桶
+    # 这样跨条款 insert 不会出现两次。
+    by_clause: dict[str, list[EditAction]] = {}
+    for a in actions:
+        bucket = a.anchor_clause_id if a.operation in ("insert_after", "insert_before") else a.target_clause_id
+        if not bucket:
+            continue
+        by_clause.setdefault(bucket, []).append(a)
+    for actions_in_c in by_clause.values():
+        actions_in_c.sort(key=lambda a: a.sort_key, reverse=True)  # 倒序应用
 
     # 标题（preamble 第一行）
     title = session.preamble_lines[0] if session.preamble_lines else session.filename
@@ -282,19 +610,51 @@ def _build_rebuilt_docx(session: ReviewSession) -> "object":
         run = p.add_run(line)
         _set_east_asia(run)
 
-    # 条款（应用替换；段落级粒度，PDF 路径无原段落锚点故只替换首段 + 追加多段，无高亮）
+    # 条款：基于 c.text 拆分多行，并按 EditAction 倒序应用 replace / delete / insert
     for c in session.clauses:
-        new_texts = replacements.get(c.clause_id)
-        if new_texts:
-            for line in [l for l in "\n".join(new_texts).splitlines() if l.strip()]:
-                p = doc.add_paragraph()
-                run = p.add_run(line)
-                _set_east_asia(run)
-        else:
-            for line in c.text.splitlines():
-                p = doc.add_paragraph()
-                run = p.add_run(line)
-                _set_east_asia(run)
+        clause_actions = by_clause.get(c.clause_id, [])
+        lines = c.text.splitlines()
+        out_lines: list[str] = list(lines)
+        anchors = _build_subitem_line_index(out_lines)
+        for act in clause_actions:
+            if act.operation == "delete" and act.target_sub_item_no:
+                idx = anchors.get(act.target_sub_item_no)
+                if idx is not None and 0 <= idx < len(out_lines):
+                    out_lines.pop(idx)
+                    anchors = _build_subitem_line_index(out_lines)
+                continue
+            if act.operation == "replace":
+                if act.target_sub_item_no and act.target_sub_item_no in anchors:
+                    idx = anchors[act.target_sub_item_no]
+                else:
+                    idx = 0  # 整条款级替换：仅替换首段
+                replacement_lines = [ln.strip() for ln in act.new_text.splitlines() if ln.strip()]
+                if not replacement_lines:
+                    continue
+                out_lines[idx:idx + 1] = replacement_lines
+                anchors = _build_subitem_line_index(out_lines)
+                continue
+            if act.operation == "insert_after":
+                idx = anchors.get(act.anchor_sub_item_no)
+                insert_at = (idx + 1) if idx is not None else len(out_lines)
+                insert_lines = [ln.strip() for ln in act.new_text.splitlines() if ln.strip()]
+                out_lines[insert_at:insert_at] = insert_lines
+                anchors = _build_subitem_line_index(out_lines)
+                continue
+            if act.operation == "insert_before":
+                idx = anchors.get(act.anchor_sub_item_no)
+                insert_at = idx if idx is not None else 0
+                insert_lines = [ln.strip() for ln in act.new_text.splitlines() if ln.strip()]
+                out_lines[insert_at:insert_at] = insert_lines
+                anchors = _build_subitem_line_index(out_lines)
+                continue
+
+        for line in out_lines:
+            if not line.strip():
+                continue
+            p = doc.add_paragraph()
+            run = p.add_run(line)
+            _set_east_asia(run)
 
     # tail
     for line in session.tail_lines:
@@ -302,6 +662,17 @@ def _build_rebuilt_docx(session: ReviewSession) -> "object":
         run = p.add_run(line)
         _set_east_asia(run)
     return doc
+
+
+def _build_subitem_line_index(lines: list[str]) -> dict[str, int]:
+    """返回 X.Y 子项编号 → 行号 索引（用于 PDF 重建路径下的 sub_item_no 锚点）。"""
+    index: dict[str, int] = {}
+    sub_re = re.compile(r"^\s*(\d+\.\d+(?:\.\d+)?)[\s　:：、]")
+    for i, ln in enumerate(lines):
+        m = sub_re.match(ln)
+        if m and m.group(1) not in index:
+            index[m.group(1)] = i
+    return index
 
 
 def export_docx_rebuilt(session: ReviewSession) -> io.BytesIO:

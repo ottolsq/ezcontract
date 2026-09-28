@@ -4,6 +4,8 @@ import {
   bestMatchSegments,
   spliceReplacedSegments,
   replaceParagraphText,
+  insertParagraphText,
+  deleteParagraphText,
   SUBITEM_RE,
 } from './review-diff'
 
@@ -242,9 +244,28 @@ export const useReviewStore = defineStore('review', {
         const finalText = (d.text || '').trim()
         if (!finalText) continue
         const risk = this.risks.find((r) => r.risk_id === d.risk_id)
+        const op = d.operation || risk?.operation || 'replace'
         const subNo = d.sub_item_no || risk?.sub_item_no || ''
+        const anchorClauseId = d.anchor_clause_id || risk?.anchor_clause_id || clauseId
+        const anchorSubNo = d.anchor_sub_item_no || risk?.anchor_sub_item_no || ''
+
+        if (op === 'insert_after' || op === 'insert_before') {
+          const position = op === 'insert_after' ? 'after' : 'before'
+          // 跨条款插入：先按锚点子项找到所在 clause，插入；前端多 clause 由后端负责跨条款导出，
+          // 这里仍写到当前 clauseId 的 visual（仅本地展示，导出以最终后端为准）。
+          html = insertParagraphText(html, anchorSubNo, finalText, position)
+          text = this._applyLineInsert(text, anchorSubNo, finalText, position)
+          continue
+        }
+
+        if (op === 'delete') {
+          html = deleteParagraphText(html, subNo)
+          text = this._applyLineDelete(text, subNo)
+          continue
+        }
+
+        // replace：精确按子项编号替换；保留原 <p> 开标签 + 样式
         if (subNo) {
-          // 精确按子项编号替换：保留原 <p> 开标签 + 样式
           html = replaceParagraphText(html, subNo, finalText)
         } else {
           // 兜底：Jaccard 多段匹配（保留旧实现以兼容整条款风险）
@@ -266,6 +287,33 @@ export const useReviewStore = defineStore('review', {
       ]
     },
 
+    /** 在原 text 中 anchor 子项行 后/前 插入新单位文本 */
+    _applyLineInsert(originalText, anchorSubNo, newText, position) {
+      const lines = originalText.split(/\r?\n/)
+      if (!lines.length) return newText
+      if (anchorSubNo) {
+        const re = new RegExp(`^${anchorSubNo.replace(/\./g, '\\.')}[\\s　:：、]`)
+        const idx = lines.findIndex((ln) => re.test(ln.trim()))
+        if (idx >= 0) {
+          const insertAt = position === 'after' ? idx + 1 : idx
+          lines.splice(insertAt, 0, newText)
+          return lines.join('\n')
+        }
+      }
+      // 兜底：追加到末尾 / 头部
+      if (position === 'before') lines.unshift(newText)
+      else lines.push(newText)
+      return lines.join('\n')
+    },
+
+    /** 从原 text 中删除指定子项行 */
+    _applyLineDelete(originalText, subNo) {
+      if (!subNo) return originalText
+      const re = new RegExp(`^${subNo.replace(/\./g, '\\.')}[\\s　:：、]`)
+      const out = originalText.split(/\r?\n/).filter((ln) => !re.test(ln.trim()))
+      return out.join('\n')
+    },
+
     /** 决策：本地乐观更新 + 后端保存 */
     async saveDecision(risk, type, payload = {}) {
       const decision = {
@@ -274,10 +322,22 @@ export const useReviewStore = defineStore('review', {
         text: payload.text ?? (type === 'accepted' ? risk.suggestion : null),
         reason: payload.reason ?? null,
         sub_item_no: payload.sub_item_no ?? risk.sub_item_no ?? null,
+        // Plan B：透传 operation / anchor / new 字段，导出按单位执行
+        operation: payload.operation ?? risk.operation ?? null,
+        anchor_clause_id: payload.anchor_clause_id ?? risk.anchor_clause_id ?? null,
+        anchor_sub_item_no: payload.anchor_sub_item_no ?? risk.anchor_sub_item_no ?? null,
+        new_clause_no: payload.new_clause_no ?? risk.new_clause_no ?? null,
+        new_clause_title: payload.new_clause_title ?? risk.new_clause_title ?? null,
       }
       this.decisions = { ...this.decisions, [risk.risk_id]: decision }
       // 基于原始内容重新应用该条款所有决策（防止叠加漂移）
+      // insert_* 的跨条款 effect 也尝试重建一次目标 clause（用于本机预览）
       this._rebuildClauseHtml(risk.clause_id)
+      const op = decision.operation || 'replace'
+      const anchorClauseId = decision.anchor_clause_id || risk.clause_id
+      if ((op === 'insert_after' || op === 'insert_before') && anchorClauseId !== risk.clause_id) {
+        this._rebuildClauseHtml(anchorClauseId)
+      }
       // 保持当前选中不跳转，便于用户在正文中直接确认绿色修改框
       await api.put(`/review/${this.reviewId}/decisions`, {
         decisions: Object.values(this.decisions),
@@ -292,6 +352,11 @@ export const useReviewStore = defineStore('review', {
       this.currentRiskId = risk.risk_id
       // 用原始内容重建该条款：撤销后无剩余决策时还原为原始合同文本
       this._rebuildClauseHtml(clauseId)
+      // insert_* 跨条款 effect 也回滚一次
+      const anchorClauseId = risk.anchor_clause_id
+      if ((risk.operation === 'insert_after' || risk.operation === 'insert_before') && anchorClauseId && anchorClauseId !== clauseId) {
+        this._rebuildClauseHtml(anchorClauseId)
+      }
       await api.put(`/review/${this.reviewId}/decisions`, {
         decisions: Object.values(this.decisions),
       })

@@ -24,8 +24,13 @@ RISK_SCHEMA_HINT = """{
       "matched_rules": ["ERP-PAY-001"],
       "issue": "风险说明，80字以内",
       "impact": "对甲方的影响，80字以内",
-      "suggestion": "完整、可直接整段替换原条款的条款文本",
-      "sub_item_no": "5.3"
+      "suggestion": "完整、可直接整段替换原条款的条款文本（replace 时必填）",
+      "sub_item_no": "5.3",
+      "operation": "replace | insert_after | insert_before | delete",
+      "anchor_clause_id": "C01",
+      "anchor_sub_item_no": "5.2",
+      "new_clause_no": "第十二条",
+      "new_clause_title": "数据安全与保密"
     }
   ]
 }"""
@@ -36,6 +41,17 @@ SUBITEM_NO_HINT = (
     '必须输出该子项编号字符串（例如 "5.3"）；如果风险针对整个条款、'
     '或无法确定具体子项，输出空字符串 ""。\n'
     "不要编造不存在的子项编号；只输出该条款正文里真实出现过的 X.Y。\n"
+)
+
+# Plan B：编辑操作语义
+OPERATION_HINT = (
+    "operation 字段含义（Plan B 精确编辑指令，默认 replace，向后兼容旧输出）：\n"
+    "- replace: 替换 clause_id（+可选 sub_item_no）对应的单位。suggestion 必须是新单位完整文本。\n"
+    "- insert_after / insert_before: 在 anchor_clause_id（+可选 anchor_sub_item_no）对应单位的后/前插入新单位。suggestion 必须包含新单位自己的完整编号与正文。\n"
+    "  新增整条款时建议同时给出 new_clause_no（如「第十二条」）与 new_clause_title。\n"
+    "- delete: 删除 clause_id（+可选 sub_item_no）对应的单位；suggestion 可留空。\n"
+    "每个风险对象只能描述一个被修改单位，禁止一次替换多个子项。\n"
+    "anchor_clause_id / clause_id 只能取自待审查条款列表中的真实 id；不要编造。\n"
 )
 
 
@@ -91,6 +107,7 @@ def build_review_prompt(
         f"## 任务\n逐条对照以上参考与规则库识别风险条款，输出 JSON（risks 为数组，未发现风险时为空数组）：\n{RISK_SCHEMA_HINT}"
     )
     user_parts.append(f"## 子项编号\n{SUBITEM_NO_HINT}")
+    user_parts.append(f"## 编辑操作\n{OPERATION_HINT}")
     user_parts.append(
         "## 硬性约束\n"
         "1. clause_id 只能取自上述编号，不得编造\n"
@@ -99,7 +116,8 @@ def build_review_prompt(
         "4. 未命中风险的条款不要输出；宁缺勿滥，不确定的不输出\n"
         "5. 每个 JSON 对象必须完整闭合；若条款较多，只输出最重要的风险项\n"
         "6. level 仅使用 high / medium / low（与现有 schema 保持一致）；若内部按 P0/P1/P2 思考，请先映射：P0=high, P1=medium, P2=low\n"
-        "7. issue/impact 用简体中文"
+        "7. issue/impact 用简体中文\n"
+        "8. Plan B 编辑约束：每个风险只代表一个被修改单位；replace 且 sub_item_no 非空时，suggestion 必须且只能以该 sub_item_no 开头，后跟空白/冒号/顿号，且不得出现其他 X.Y 编号；replace 且 sub_item_no 为空（整条款）时，suggestion 只允许针对该整条款，不得在文本里携带 X.Y 子项编号（禁止把多个子项打包）；如需修改多个子项请拆成多个 RiskItem 提交；insert_* 必须给出 anchor_clause_id，suggestion 必须包含新单位自己的完整编号与正文；delete 必须引用真实存在的 clause_id 或 sub_item_no"
     )
     user = "\n\n".join(user_parts)
     return [

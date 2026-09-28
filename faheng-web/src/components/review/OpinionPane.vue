@@ -22,6 +22,22 @@ const existingDecision = computed(() =>
   risk.value ? store.decisions[risk.value.risk_id] : null,
 )
 
+// Plan B：operation 标签与文案
+const operation = computed(() => risk.value?.operation || 'replace')
+const isDelete = computed(() => operation.value === 'delete')
+const isInsert = computed(() => operation.value === 'insert_after' || operation.value === 'insert_before')
+
+const suggestionLabel = computed(() => {
+  if (isDelete.value) return '建议删除该单位'
+  if (isInsert.value) return '建议新增内容'
+  return '建议替换条款'
+})
+const suggestionClass = computed(() => {
+  if (isDelete.value) return 'suggestion delete'
+  if (isInsert.value) return 'suggestion insert'
+  return 'suggestion'
+})
+
 const severityLabel = computed(() => {
   if (!risk.value) return ''
   if (existingDecision.value) {
@@ -39,15 +55,20 @@ watch(
   () => {
     showModify.value = false
     showReject.value = false
+    modifyText.value = ''
   },
 )
 
 async function onAccept() {
   await store.saveDecision(risk.value, 'accepted')
-  ElMessage.success('已采纳建议条款')
+  ElMessage.success(isDelete.value ? '已采纳：删除该单位' : isInsert.value ? '已采纳：新增该单位' : '已采纳建议条款')
 }
 
 function openModify() {
+  if (isDelete.value) {
+    // delete 不允许"修改"，只允许"采纳/不采纳"
+    return
+  }
   modifyText.value =
     existingDecision.value?.type === 'modified'
       ? existingDecision.value.text
@@ -63,7 +84,7 @@ async function onSaveModify() {
   }
   await store.saveDecision(risk.value, 'modified', { text: modifyText.value.trim() })
   showModify.value = false
-  ElMessage.success('已保存修改后条款')
+  ElMessage.success(isInsert.value ? '已保存新增内容' : '已保存修改后条款')
 }
 
 function openReject() {
@@ -90,6 +111,9 @@ async function onUndo() {
         <span class="clause-no">
           {{ risk.clause_no }}
           <span v-if="risk.sub_item_no" class="sub-item">· {{ risk.sub_item_no }}</span>
+          <el-tag v-if="operation !== 'replace'" size="small" :type="isDelete ? 'danger' : 'success'" class="op-tag">
+            {{ isDelete ? '删除' : '新增' }}
+          </el-tag>
         </span>
       </div>
     </template>
@@ -115,21 +139,49 @@ async function onUndo() {
       <div class="label">对甲方的影响</div>
       <div>{{ risk.impact }}</div>
     </div>
-    <div class="section">
-      <div class="label">建议替换条款</div>
-      <div class="suggestion">{{ risk.suggestion }}</div>
-    </div>
+
+    <!-- insert: 锚点 + 新增内容 -->
+    <template v-if="isInsert">
+      <div class="section">
+        <div class="label">插入位置</div>
+        <div>
+          <span v-if="risk.anchor_clause_id">锚点条款 {{ risk.anchor_clause_id }}</span>
+          <span v-if="risk.anchor_sub_item_no"> · {{ risk.anchor_sub_item_no }}</span>
+          <span class="hint">{{ operation === 'insert_after' ? '（在该单位之后）' : '（在该单位之前）' }}</span>
+        </div>
+      </div>
+      <div class="section">
+        <div class="label">{{ suggestionLabel }}</div>
+        <div :class="suggestionClass">{{ risk.suggestion }}</div>
+      </div>
+    </template>
+
+    <!-- delete: 不展示 suggestion -->
+    <template v-else-if="isDelete">
+      <div class="section">
+        <div class="label">{{ suggestionLabel }}</div>
+        <div class="hint">删除后该单位将从合同中移除。</div>
+      </div>
+    </template>
+
+    <!-- replace: 默认 -->
+    <template v-else>
+      <div class="section">
+        <div class="label">{{ suggestionLabel }}</div>
+        <div :class="suggestionClass">{{ risk.suggestion }}</div>
+      </div>
+    </template>
 
     <!-- 决策按钮 -->
     <div class="decision-actions">
-      <el-button type="primary" @click="onAccept">采纳</el-button>
-      <el-button @click="openModify">修改</el-button>
+      <el-button type="primary" @click="onAccept">{{ isDelete ? '确认删除' : '采纳' }}</el-button>
+      <el-button v-if="!isDelete" @click="openModify">修改</el-button>
       <el-button @click="openReject">不采纳</el-button>
     </div>
 
     <!-- 修改面板 -->
     <div v-if="showModify" class="edit-box">
-      <div class="label">修改后的替换条款</div>
+      <div class="label">{{ isInsert ? '修改后的新增内容' : '修改后的替换条款' }}</div>
       <el-input v-model="modifyText" type="textarea" :rows="5" />
       <div class="edit-actions">
         <el-button type="primary" size="small" @click="onSaveModify">保存并采纳</el-button>
@@ -207,6 +259,9 @@ async function onUndo() {
 }
 
 .clause-no {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: #66758a;
   font-size: 13px;
 }
@@ -215,6 +270,10 @@ async function onUndo() {
   margin-left: 4px;
   color: #b42318;
   font-weight: 500;
+}
+
+.op-tag {
+  margin-left: 4px;
 }
 
 .severity {
@@ -264,11 +323,28 @@ async function onUndo() {
   margin-bottom: 5px;
 }
 
+.hint {
+  color: #94a3b8;
+  font-size: 12px;
+  margin-left: 4px;
+}
+
 .suggestion {
   background: #e8f8f2;
   border-radius: 8px;
   padding: 10px;
   line-height: 1.7;
+}
+
+.suggestion.insert {
+  background: #e6f4ff;
+  border-left: 3px solid #1d7adf;
+}
+
+.suggestion.delete {
+  background: #fdecea;
+  border-left: 3px solid #b42318;
+  color: #b42318;
 }
 
 .decision-actions {

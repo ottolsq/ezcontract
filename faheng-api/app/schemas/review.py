@@ -7,11 +7,35 @@ from pydantic import BaseModel, Field
 
 
 class SubItem(BaseModel):
-    """条款内子项（如 5.1 / 5.3）—— 用于精确定位被替换的段落"""
+    """条款内子项（X.Y / X.Y(Z) / X.Y(Z)(a) 等 N 级嵌套）。
 
-    sub_item_no: str  # "5.3"
-    start_idx: int  # 段落在原始文档中的绝对下标（与 Clause.start_idx 同坐标系）
+    字段语义：
+    - `sub_item_no`：向后兼容字段，等于 `internal_no`（前端旧版直接读这个字段）。
+    - `display_no`：合同原文里出现的编号字符串（保留全角/半角括号、数字/字母样式）；
+      导出回填时作为前缀拼回正文。
+    - `internal_no`：全局唯一定位键（半角规范化、重复递增），用于下游 LLM 引用与导出
+      的精确段匹配。
+    - `level`：在 clause 内的层级（1 = X.Y，2 = (Z) 嵌套，3 = (a) 等）。
+    - `path_parts`：层级路径列表，如 `["3.1", "(1)"]`；用于推断父级与同级编号样式。
+    - `line_in_paragraph`：同一段落内第几行（0-based），处理 `<w:br/>` 分隔的多子项段。
+    """
+
+    sub_item_no: str = ""  # 向后兼容：= internal_no
+    display_no: str = ""  # 原文显示编号，如 "（1）" / "(a)"
+    internal_no: str = ""  # 全局唯一定位键，如 "3.1(1)" / "7.2(3)"
+    level: int = 1  # 层级：1=X.Y, 2=(Z), 3=(a)...
+    path_parts: list[str] = []  # 层级路径，如 ["3.1", "(1)"]
+    line_in_paragraph: int = 0  # 同段多子项时第几行
+    start_idx: int  # 段落在原始文档中的绝对下标
     end_idx: int
+
+    def model_post_init(self, __context):  # type: ignore[override]
+        # 让 sub_item_no 与 internal_no 自动同步（向后兼容）
+        if not self.sub_item_no and self.internal_no:
+            object.__setattr__(self, "sub_item_no", self.internal_no)
+        elif not self.internal_no and self.sub_item_no:
+            object.__setattr__(self, "internal_no", self.sub_item_no)
+        return None
 
 
 class Clause(BaseModel):

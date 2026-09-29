@@ -23,8 +23,80 @@ MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
 ALLOWED_EXT = {".docx", ".pdf"}
 
 
-# 子项编号正则（与 clause_splitter 一致）
-_SUBITEM_PREFIX_RE = re.compile(r"(?<!\d)(\d+\.\d+(?:\.\d+)?)")
+# 子项编号正则（与 clause_splitter 一致）：支持 X.Y / X.Y.Z / X.Y(Z) / X.Y（Z）
+_SUBITEM_PREFIX_RE = re.compile(
+    r"(?<!\d)(\d+\.\d+(?:\.\d+)?(?:\([0-9０-９]+\)|（[0-9０-９]+）)?)"
+)
+
+
+# 半角数字括号 → 全角中文括号：与中文合同原条款保持一致。Word 习惯使用全角。
+_PAREN_DIGIT_RE = re.compile(r"\((\d+)\)")
+_CHINESE_DIGIT_PAREN_MAP = str.maketrans("0123456789", "０１２３４５６７８９")
+
+
+def _normalize_parens(text: str) -> str:
+    """把中文合同里出现的半角数字括号 (1)/(2)/(3) 替换为全角（1）/（2）/（3）。
+
+    只针对前后是中文或出现在条款正文里的数字括号生效；为简化处理，匹配整段里
+    所有 ASCII 数字括号并替换。Word/WPS 默认对半角括号后的中文换行效果不一致，
+    改成全角可以避免版式抖动。
+
+    注意：会一并把 ASCII 数字（0-9）替换为全角数字（０-９），便于 LLM 在中文合同
+    里直接使用纯文本 ASCII 数字时被规整。但 X.Y 子项编号（包含 .）会因 "." 不在
+    映射表里而保持原样，X.Y 段结构不变。
+    """
+    if not text:
+        return text
+    text = _PAREN_DIGIT_RE.sub(lambda m: f"（{m.group(1)}）", text)
+    return text.translate(_CHINESE_DIGIT_PAREN_MAP)
+
+
+def _normalize_subitem_no_digits(text: str) -> str:
+    """把 X.Y 子项编号里的 ASCII 数字回退为半角数字（与 _normalize_parens 反向互补）。
+
+    `_normalize_parens` 会把 ASCII 数字全转全角 → X.Y 编号也被一起转；
+    `_SUBITEM_PREFIX_RE` 不识别全角数字 → 子项编号无法识别，UI 显示整条款。
+    本函数把 X.Y 形式（仅限此形式）里的全角数字回退为半角，不影响其余中文文本。
+    """
+    if not text:
+        return text
+    import re as _re
+
+    # 匹配 X.Y 或 X.Y(Z) / X.Y（Z） 编号串，仅处理此范围内的全角数字
+    pattern = _re.compile(
+        r"(\d+\.\d+(?:\.\d+)?(?:\([0-9０-９]+\)|（[0-9０-９]+）)?)"
+    )
+
+    def _replace(m):
+        token = m.group(1)
+        # 把 token 内的全角数字回退为半角
+        return token.translate(_CHINESE_DIGIT_PAREN_MAP.inverse if hasattr(_CHINESE_DIGIT_PAREN_MAP, "inverse") else str.maketrans("０１２３４５６７８９", "0123456789"))
+
+    return pattern.sub(_replace, text)
+
+
+def _strip_numbering_prefix(text: str, sub_item_no: str, display_no: str) -> str:
+    """Plan A 硬性约束实现：剥掉 suggestion 中可能被 LLM 误带的编号前缀。
+
+    - 若以 sub_item_no + 全角/半角分隔符开头 → 去除；
+    - 若以 display_no + 分隔符开头 → 去除（display_no 可能带全角括号）；
+    - 若以 display_no 去掉 (Z) 后部分（仅 X.Y 基编号）开头 → 不动（避免误删）；
+    - 否则原样返回。
+    """
+    if not text:
+        return text
+    stripped = text.lstrip()
+    # 1) sub_item_no 前缀：3.1/7.2(1)/3.2(a)
+    if sub_item_no and stripped.startswith(sub_item_no):
+        after = stripped[len(sub_item_no):]
+        if after and after[0] in " \t　:：、":
+            return stripped[:0] + after.lstrip()
+    # 2) display_no 前缀（如「（1）」「(a)」「3.1（1）」）
+    if display_no and stripped.startswith(display_no):
+        after = stripped[len(display_no):]
+        if after and after[0] in " \t　:：、":
+            return stripped[:0] + after.lstrip()
+    return text
 
 
 # 关键词 → 12 类合同目录 key（与 skill_refs._TYPE_INDEX 对齐）
@@ -129,8 +201,30 @@ def _make_batches(clauses: list[Clause]) -> list[list[Clause]]:
     return batches
 
 
+def _make_subitems_index(batch: list[Clause]) -> str:
+    """为 LLM 提供本批 clause 下所有合法 sub_item_no（internal_no）取值列表。"""
+    lines = []
+    for c in batch:
+        if not c.subitems:
+            lines.append(f"{c.clause_id} (无子项)")
+            continue
+        nos = [s.internal_no for s in c.subitems]
+        lines.append(f"{c.clause_id} → {', '.join(nos)}")
+    return "\n".join(lines)
+
+
 def _clauses_text(batch: list[Clause]) -> str:
-    return "\n\n".join(f"{c.clause_id} {c.clause_no}{' ' + c.title if c.title else ''}\n{c.text}" for c in batch)
+    parts = []
+    for c in batch:
+        head = f"{c.clause_id} {c.clause_no}{' ' + c.title if c.title else ''}"
+        sub_summary = ""
+        if c.subitems:
+            sub_summary = "\n  子项：" + "; ".join(
+                f"{s.internal_no} ({s.display_no})"
+                for s in c.subitems
+            )
+        parts.append(f"{head}{sub_summary}\n{c.text}")
+    return "\n\n".join(parts)
 
 
 def _postprocess(
@@ -154,17 +248,50 @@ def _postprocess(
         # 优先级 1：raw 已是合法子项编号 → 直接返回（信任 LLM）
         if raw and raw in valid:
             return raw
-        # 优先级 2：suggestion 以 X.Y + 合法分隔符开头 → 抓这个编号
+        # 优先级 2：suggestion 以 X.Y(Z) + 合法分隔符开头 → 抓这个编号
         if suggestion:
             m = _SUBITEM_PREFIX_RE.match(suggestion)
             if m and m.group(1) in valid and len(suggestion) > m.end() and re.match(r"[\s　:：、]", suggestion[m.end():m.end()+1]):
                 return m.group(1)
-            # 优先级 3：整段扫描找第一个合法 X.Y（处理 "押金条款：3.2 ..." 这种）
+            # 优先级 3：整段扫描找第一个合法 X.Y / X.Y(Z)（处理 "押金条款：3.2 ..." 这种）
+            # 同时扫描 X.Y(Z) 的基编号 X.Y（处理 7.2(1) 这种半角括号子项只能定位到 7.2 的场景）
             for m in _SUBITEM_PREFIX_RE.finditer(suggestion):
-                if m.group(1) in valid:
-                    return m.group(1)
+                tok = m.group(1)
+                if tok in valid:
+                    return tok
+                # 尝试从 X.Y(Z) 提取基编号
+                base_match = re.match(r"^(\d+\.\d+)", tok)
+                if base_match and base_match.group(1) in valid:
+                    return base_match.group(1)
         # raw 不在 valid 中且无法从 suggestion 推导 → 返回空（强制按整条款处理，
         # 触发 autosplit 或 fallback）。避免误信任 LLM 的伪造编号。
+        return ""
+
+    def _extract_subitem_from_text(text: str, clause_id: str) -> str:
+        """从 issue / 其他字段兜底提取 sub_item_no（用于 sub_item_no 为空但 issue 提到子项的场景）。"""
+        if not text:
+            return ""
+        valid = clause_subitems.get(clause_id, set())
+        # issue / 其它字段可能含 7.2（１）这种全角括号子项，先把全角数字回退再扫
+        text = _normalize_subitem_no_digits(text)
+        for m in _SUBITEM_PREFIX_RE.finditer(text):
+            tok = m.group(1)
+            if tok in valid:
+                return tok
+            # 半角括号 (Z) 在所有缩进无效时（典型 case），回退到基编号
+            base_match = re.match(r"^(\d+\.\d+)", tok)
+            if base_match and base_match.group(1) in valid:
+                return base_match.group(1)
+        return ""
+
+    def _display_no_for(clause_id: str, sub_item_no: str) -> str:
+        """从 clause.subitems 查 sub_item_no 对应的 display_no。"""
+        for c in clauses:
+            if c.clause_id != clause_id:
+                continue
+            for s in c.subitems:
+                if s.sub_item_no == sub_item_no or s.internal_no == sub_item_no:
+                    return s.display_no
         return ""
 
     def _validate(r: RiskItem) -> str | None:
@@ -173,6 +300,12 @@ def _postprocess(
         # 1) clause_id 必须存在
         if r.clause_id not in clause_map:
             return "clause_id 不存在"
+        # 0) 全局归一化：suggestion/issue 中的半角数字括号替换为全角中文括号。
+        # 同时回退 X.Y 子项编号里的 ASCII 数字，避免 _SUBITEM_PREFIX_RE 失效。
+        if r.suggestion:
+            r.suggestion = _normalize_subitem_no_digits(_normalize_parens(r.suggestion))
+        if r.issue:
+            r.issue = _normalize_subitem_no_digits(_normalize_parens(r.issue))
         # 2) operation 维度校验
         if op == "replace":
             # suggestion 必须有内容
@@ -185,31 +318,28 @@ def _postprocess(
             unique_real = sorted(set(real_numbers))
             # sub_item_no 归一化（确保指向真实子项或空）
             normalized = _normalize_subitem(r.sub_item_no, r.suggestion, r.clause_id)
+            # 兜底：若 suggestion 提取不到，尝试从 issue 字段反推（用户描述里常含子项编号）
+            if not normalized:
+                normalized = _extract_subitem_from_text(r.issue, r.clause_id)
             r.sub_item_no = normalized
-            # 情形 A：sub_item_no 非空（子项级 replace）：
-            #   若 suggestion 含其它子项编号则降级为 autosplit；否则按子项精确替换。
-            #   不强制要求 suggestion 以编号开头 —— LLM 写 "押金条款：3.2 ..." 时，sub_item_no 已锁定目标。
+            # Plan A：编号剥离 —— 若 suggestion 仍带 sub_item_no 或 display_no 前缀，去掉。
             if normalized:
-                # suggestion 包含多个真实编号 → autosplit
+                display_no = _display_no_for(r.clause_id, normalized)
+                r.suggestion = _strip_numbering_prefix(r.suggestion, normalized, display_no)
+                # 重新扫描：strip 后可能不再含真实编号
+                found_iter = list(_SUBITEM_PREFIX_RE.finditer(r.suggestion))
+                real_numbers = [m.group(1) for m in found_iter if m.group(1) in valid]
+                unique_real = sorted(set(real_numbers))
+                # 情形 A：sub_item_no 非空（子项级 replace）：
                 if len(unique_real) > 1:
                     autosplit_state[id(r)] = [
                         (m.start(), m.group(1)) for m in found_iter if m.group(1) in valid
                     ]
                     return "replace suggestion 包含其他子项编号，自动按子项拆分"
-                # suggestion 以 normalized + 合法分隔符开头 → 严格通过
-                first_match = _SUBITEM_PREFIX_RE.match(r.suggestion)
-                if (
-                    first_match
-                    and first_match.group(1) == normalized
-                    and first_match.end() < len(r.suggestion)
-                    and re.match(r"[\s　:：、]", r.suggestion[first_match.end():first_match.end()+1])
-                ):
-                    return None
-                # suggestion 不以编号开头但 sub_item_no 有效 → 信任 LLM，自动补编号前缀
-                if r.sub_item_no == normalized and not first_match:
-                    r.suggestion = f"{normalized} {r.suggestion.lstrip()}"
-                    return None
-                return "replace suggestion 编号与 sub_item_no 不一致"
+                # strip 后若 suggestion 为空 → 兜底丢弃
+                if not r.suggestion.strip():
+                    return "replace suggestion 编号剥离后为空"
+                return None
             # 情形 B：sub_item_no 为空（整条款 replace）：若 suggestion 含多个真实子项编号，
             # 由代码侧按子项编号自动拆成 N 个 RiskItem，每个 sub_item_no 指向一个子项。
             if len(unique_real) > 1:
@@ -220,10 +350,20 @@ def _postprocess(
             # 唯一编号时回填 sub_item_no，按子项精确替换
             if len(unique_real) == 1:
                 r.sub_item_no = unique_real[0]
+                # 编号剥离（防止整条款场景下 LLM 写了编号前缀）
+                display_no = _display_no_for(r.clause_id, r.sub_item_no)
+                r.suggestion = _strip_numbering_prefix(r.suggestion, r.sub_item_no, display_no)
+            # 兜底：sub_item_no 仍为空且 issue 含子项编号（如 "7.1(2)..."），用 issue 的编号回填
+            if not r.sub_item_no:
+                from_issue = _extract_subitem_from_text(r.issue, r.clause_id)
+                if from_issue:
+                    r.sub_item_no = from_issue
             return None
         if op in ("insert_after", "insert_before"):
             if not (r.suggestion or "").strip():
                 return "insert_* 缺少 suggestion"
+            # 0.5) 兜底归一化：半角数字括号 → 全角
+            r.suggestion = _normalize_parens(r.suggestion)
             if not r.anchor_clause_id or r.anchor_clause_id not in clause_map:
                 return "insert_* anchor_clause_id 不存在"
             if r.anchor_sub_item_no:
@@ -296,15 +436,18 @@ def _postprocess(
                     if not raw_seg:
                         continue
                     # 子项段以 no + 分隔符开头（满足 _normalize_subitem 的合法格式）
-                    no_re = re.compile(r"^\s*" + re.escape(no) + r"[\s　:：、]")
+                    no_re = re.compile(
+                        r"^\s*" + re.escape(no)
+                        + r"(?:\([0-9０-９]+\)|（[0-9０-９]+）)?[\s　:：、]"
+                    )
                     if not no_re.match(raw_seg):
                         # 极端兜底：手动补编号前缀
                         raw_seg = f"{no} {raw_seg}"
-                    # 去掉尾随可能混入的其他 X.Y 编号：从段尾向前截断到最后一个合法 no 的位置
+                    # 去掉尾随可能混入的其他 X.Y(X) 编号：从段尾向前截断到最后一个合法 no 的位置
                     trimmed = raw_seg
                     last_no_end = no_re.match(trimmed).end() if no_re.match(trimmed) else 0
                     extra = re.search(
-                        r"(?<!\d)(\d+\.\d+(?:\.\d+)?)[\s　:：、]",
+                        r"(?<!\d)(\d+\.\d+(?:\.\d+)?(?:\([0-9０-９]+\)|（[0-9０-９]+）)?)[\s　:：、]",
                         trimmed[last_no_end:],
                     )
                     if extra:
@@ -371,7 +514,11 @@ async def run_review(session: ReviewSession) -> None:
 
             try:
                 out = await chat_json(
-                    build_review_prompt(_clauses_text(batch), contract_type=contract_type),
+                    build_review_prompt(
+                        _clauses_text(batch),
+                        contract_type=contract_type,
+                        subitems_index=_make_subitems_index(batch),
+                    ),
                     schema=ReviewLLMOut,
                     temperature=settings.REVIEW_TEMPERATURE,
                     max_tokens=settings.REVIEW_MAX_TOKENS,
@@ -408,10 +555,14 @@ def apply_decisions(session: ReviewSession, decisions: list[Decision]) -> int:
     return len(session.decisions)
 
 
-async def export_review_docx(session: ReviewSession) -> io.BytesIO:
-    """导出决策回填后的最终合同 docx（内存 BytesIO，无落盘）"""
+async def export_review_docx(session: ReviewSession, *, track_changes: bool = False) -> io.BytesIO:
+    """导出决策回填后的最终合同 docx（内存 BytesIO，无落盘）。
+
+    默认走就地替换（直接给修改后正确的文档，无修订标记）；调用方可显式
+    传 track_changes=True 以打开 Track Changes 评审记录模式。
+    """
     if not session.decisions:
         raise HTTPException(400, "尚无任何决策记录，请先在风险清单中处理至少一项")
-    buf = await asyncio.to_thread(export_final_docx, session)
+    buf = await asyncio.to_thread(export_final_docx, session, track_changes=track_changes)
     buf.seek(0)
     return buf

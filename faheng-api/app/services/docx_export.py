@@ -238,12 +238,48 @@ def _build_edit_plan(session: ReviewSession) -> list[EditAction]:
 
 
 def _subitem_or_clause_idx(clause: Clause, sub_no: str) -> int:
-    """优先取 sub_item_no 段落下标；未命中回落到 clause.start_idx。"""
+    """优先取 sub_item_no 段落下标；未命中回落到 clause.start_idx。
+
+    兼容括号层级（3.1(3) → 先匹配精确编号；未命中则匹配基编号 3.1；再未命中则扫描
+    clause 区间内以基编号开头的段落下标）。
+    """
+    base = _strip_parenthetical_subitem(sub_no)
     if sub_no:
+        # 优先级 1：精确匹配
         for s in clause.subitems:
             if s.sub_item_no == sub_no:
                 return s.start_idx
+        # 优先级 2：基编号匹配（如 3.1(3) → 3.1）
+        if base != sub_no:
+            for s in clause.subitems:
+                if s.sub_item_no == base:
+                    return s.start_idx
     return clause.start_idx
+
+
+def _strip_parenthetical_subitem(sub_no: str) -> str:
+    """去掉括号层级，得到基编号（3.1(3) → 3.1，3.1（1） → 3.1）；无括号时原样返回。"""
+    if not sub_no:
+        return ""
+    import re as _re
+
+    m = _re.match(r"^(\d+\.\d+(?:\.\d+)?)", sub_no)
+    return m.group(1) if m else sub_no
+
+
+def _find_subitem_idx_by_text(clause: Clause, sub_no: str, paras_text: list[str] | None = None) -> int | None:
+    """段内扫描：在 clause.start_idx..end_idx 中找以基编号开头的段落下标。需要 paras_text 上下文。"""
+    base = _strip_parenthetical_subitem(sub_no)
+    if not base or paras_text is None:
+        return None
+    import re as _re
+
+    pattern = _re.compile(r"^\s*" + _re.escape(base) + r"(?:\([0-9０-９]+\)|（[0-9０-９]+）)?[\s　:：、]")
+    for i in range(clause.start_idx, clause.end_idx + 1):
+        if 0 <= i < len(paras_text):
+            if pattern.match(paras_text[i] or ""):
+                return i
+    return None
 
 
 # ---------- 路径①：DOCX 就地替换 ----------
@@ -262,13 +298,33 @@ def _apply_action_to_doc(doc, action: EditAction, clause_map: dict) -> None:
         if not clause:
             return
         idx = _resolve_target_idx(clause, action.target_sub_item_no)
+        if idx is not None and idx >= len(paras):
+            return
+        # 回退：段内扫描基编号（如 3.1(3) → 找 3.1 开头的段）
+        if (idx is None or idx >= len(paras)) and action.target_sub_item_no:
+            paras_text = [p.text for p in paras]
+            scanned = _find_subitem_idx_by_text(clause, action.target_sub_item_no, paras_text)
+            if scanned is not None and scanned < len(paras):
+                idx = scanned
         if idx is None or idx >= len(paras):
             return
         text = action.new_text
-        # 若原段落以 X.Y 编号开头而新文本不带，自动补回编号
-        orig_match = _SUBITEM_RE.match(paras[idx].text or "")
-        if orig_match and not _SUBITEM_RE.match(text):
-            text = f"{orig_match.group(0)}{text.lstrip()}"
+        # 自动补回原段落编号前缀：
+        # 1) 子项（display_no 优先 internal_no 回退）：用 clause.subitems 查 display_no
+        # 2) 子项级 X.Y(Z) 也支持：例如 7.2（1）→ 6.1（2）
+        # 3) 整条款（X.Y 基编号）：用 _SUBITEM_RE 从原段落抓 X.Y
+        display_prefix = ""
+        if action.target_sub_item_no:
+            for s in clause.subitems:
+                if s.sub_item_no == action.target_sub_item_no or s.internal_no == action.target_sub_item_no:
+                    display_prefix = s.display_no
+                    break
+        if not display_prefix:
+            orig_match = _SUBITEM_RE.match(paras[idx].text or "")
+            if orig_match:
+                display_prefix = orig_match.group(0).rstrip()
+        if display_prefix and not text.lstrip().startswith(display_prefix):
+            text = f"{display_prefix}{text.lstrip()}"
         _replace_paragraph_text(paras[idx], text)
         return
 
@@ -306,11 +362,21 @@ def _apply_action_to_doc(doc, action: EditAction, clause_map: dict) -> None:
 
 
 def _resolve_target_idx(clause: Clause, sub_no: str) -> int | None:
-    """返回目标段落下标：优先 sub_item_no；未命中则返回 clause.start_idx。"""
+    """返回目标段落下标：优先 sub_item_no；未命中回落到 clause.start_idx。
+
+    兼容括号层级（3.1(3) → 精确未命中则匹配基编号 3.1 子项）。
+    """
     if sub_no:
+        # 优先级 1：精确匹配
         for s in clause.subitems:
             if s.sub_item_no == sub_no:
                 return s.start_idx
+        # 优先级 2：基编号匹配（兼容历史/未来 LLM 输出 X.Y(Z)）
+        base = _strip_parenthetical_subitem(sub_no)
+        if base and base != sub_no:
+            for s in clause.subitems:
+                if s.sub_item_no == base:
+                    return s.start_idx
     if clause.start_idx < 0:
         return None
     return clause.start_idx
@@ -665,9 +731,11 @@ def _build_rebuilt_docx(session: ReviewSession) -> "object":
 
 
 def _build_subitem_line_index(lines: list[str]) -> dict[str, int]:
-    """返回 X.Y 子项编号 → 行号 索引（用于 PDF 重建路径下的 sub_item_no 锚点）。"""
+    """返回 X.Y 子项编号（含 X.Y(Z) 括号层级）→ 行号 索引（用于 PDF 重建路径下的 sub_item_no 锚点）。"""
     index: dict[str, int] = {}
-    sub_re = re.compile(r"^\s*(\d+\.\d+(?:\.\d+)?)[\s　:：、]")
+    sub_re = re.compile(
+        r"^\s*(\d+\.\d+(?:\.\d+)?(?:\([0-9０-９]+\)|（[0-9０-９]+）)?)[\s　:：、]"
+    )
     for i, ln in enumerate(lines):
         m = sub_re.match(ln)
         if m and m.group(1) not in index:
@@ -683,10 +751,27 @@ def export_docx_rebuilt(session: ReviewSession) -> io.BytesIO:
     return out
 
 
-def export_final_docx(session: ReviewSession) -> io.BytesIO:
-    if session.file_type == "docx":
+def export_final_docx(session: ReviewSession, *, track_changes: bool = False) -> io.BytesIO:
+    """总入口（fixPlan.md §二）：
+    - PDF 上传 → 重建（不动）；
+    - track_changes=False → 就地替换（默认路径，直接给用户修改后的合同）；
+    - track_changes=True → Track Changes（评审记录场景，接口不 500）。
+    """
+    import logging
+
+    if session.file_type != "docx":
+        return export_docx_rebuilt(session)
+    if not track_changes:
         return export_docx_inplace(session)
-    return export_docx_rebuilt(session)
+    try:
+        from app.services.docx_track_export import export_docx_with_track_changes
+
+        return export_docx_with_track_changes(session)
+    except Exception as e:  # noqa: BLE001 — 降级兜底
+        logging.getLogger(__name__).warning(
+            "Track Changes 导出失败，降级为段落替换: %s", e
+        )
+        return export_docx_inplace(session)
 
 
 # ---------- 路径③：markdown → docx（起草导出 - 降级） ----------
@@ -767,8 +852,10 @@ def export_markdown_docx(title: str, markdown: str, out_name: str) -> io.BytesIO
 
 # ---------- HTML 归一化（导出前把 LLM 输出抖动的格式修齐） ----------
 
-# 匹配 `1.1 / 1.2 / 10.3` 这种子项编号（X.Y），后面必须跟空白字符
-_SUBITEM_RE = re.compile(r"^\s*\d+\.\d+(?:\.\d+)?[\s　:：、]")
+# 匹配 `1.1 / 1.2 / 10.3 / 3.1(3) / 3.1（3）` 这种子项编号（X.Y / X.Y.Z / X.Y(Z)），后面必须跟空白字符
+_SUBITEM_RE = re.compile(
+    r"^\s*\d+\.\d+(?:\.\d+)?(?:\([0-9０-９]+\)|（[0-9０-９]+）)?[\s　:：、]"
+)
 # 匹配 h4 数字子项 `（1）（2）…`，允许全角数字
 _H4_NUMBERED_RE = re.compile(r"^[\s　]*（[0-9０-９]+）")
 # 匹配 h4 字母子项 `（a）（b）…`

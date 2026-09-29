@@ -35,23 +35,37 @@ RISK_SCHEMA_HINT = """{
   ]
 }"""
 
-# 条款子项编号提示：LLM 引用具体 X.Y 子项时输出该编号，否则留空字符串。
+# Plan A 后续：N 级嵌套子项 + 编号剥离
 SUBITEM_NO_HINT = (
-    'sub_item_no 字段：如果风险针对条款中某个 X.Y 子项（如 5.1 / 5.3），'
-    '必须输出该子项编号字符串（例如 "5.3"）；如果风险针对整个条款、'
-    '或无法确定具体子项，输出空字符串 ""。\n'
-    "不要编造不存在的子项编号；只输出该条款正文里真实出现过的 X.Y。\n"
+    "sub_item_no 字段：必须输出待审查子项的真实 internal_no（半角规范化形式）。\n"
+    "取值范围由本批输入中的 subitems 列表给出（每条形如 3.1、3.1(1)、3.2(a)、7.2(2)）；"
+    "禁止编造不在列表中的 internal_no。\n"
+    "针对整条款且范围未知时输出空字符串 ""。\n"
+    "## suggestion 编号剥离（Plan A 硬性约束）\n"
+    "replace / insert_* / modify 操作：suggestion 不得携带子项编号前缀。\n"
+    "例：针对 7.2(1) 的 replace，suggestion 写「逾期支付租金的，每逾期一日按应付租金的 5% 向甲方支付违约金…」即可，"
+    "系统会自动按原文「（1）」前缀拼接回 docx；不要在 suggestion 里写「（1）逾期…」。\n"
+    "针对 X.Y 整子项的 replace，suggestion 不要以「3.1」开头；写正文即可，系统会自动拼回「3.1」。\n"
+    "## 括号规范\n"
+    "中文合同正文统一使用全角中文括号「（Z）」；禁止在 suggestion 正文里使用半角数字编号括号 (1)、(2)、(3)。\n"
 )
 
 # Plan B：编辑操作语义
 OPERATION_HINT = (
     "operation 字段含义（Plan B 精确编辑指令，默认 replace，向后兼容旧输出）：\n"
-    "- replace: 替换 clause_id（+可选 sub_item_no）对应的单位。suggestion 必须是新单位完整文本。\n"
-    "- insert_after / insert_before: 在 anchor_clause_id（+可选 anchor_sub_item_no）对应单位的后/前插入新单位。suggestion 必须包含新单位自己的完整编号与正文。\n"
-    "  新增整条款时建议同时给出 new_clause_no（如「第十二条」）与 new_clause_title。\n"
+    "- replace: 替换 clause_id（+必填 sub_item_no）对应的单位。"
+    "suggestion 只写该单位正文（不含编号前缀），系统会自动按原文 display_no 拼回。\n"
+    "- insert_after / insert_before: 在 anchor_clause_id（+可选 anchor_sub_item_no）对应单位的后/前"
+    "插入新单位。suggestion 必须以新编号 + 全角分隔符开头（如「（4）…」或「3.3 」），"
+    "由系统校验编号合法并写入。新增整条款时建议同时给出 new_clause_no 与 new_clause_title。\n"
     "- delete: 删除 clause_id（+可选 sub_item_no）对应的单位；suggestion 可留空。\n"
     "每个风险对象只能描述一个被修改单位，禁止一次替换多个子项。\n"
     "anchor_clause_id / clause_id 只能取自待审查条款列表中的真实 id；不要编造。\n"
+    "## suggestion 编号剥离约束（Plan A 升级）\n"
+    "replace / modify 时 suggestion 不得携带子项编号前缀（不写「3.1」「（1）」等开头）。"
+    "系统会根据 sub_item_no 找到目标 display_no 并自动补回；"
+    "insert_* 时由系统生成新编号，suggestion 必须以新编号开头；"
+    "delete 时 suggestion 可为空。\n"
 )
 
 
@@ -76,8 +90,15 @@ def _truncate(text: str, limit: int = 6000) -> str:
 def build_review_prompt(
     clauses_text: str,
     contract_type: str | None = None,
+    subitems_index: str = "",
 ) -> list[dict]:
-    """审查 prompt：skill 知识库 + ERP 规则库 + 本批条款 + JSON schema + 硬性约束"""
+    """审查 prompt：skill 知识库 + 规则库 + 本批条款（含 subitems 列表）+ JSON schema + 硬性约束。
+
+    `subitems_index` 形如：
+        C03 → 3.1, 3.1(1), 3.1(2), 3.2, 3.2(a), 3.2(b), 3.2(c), 3.3
+        C07 → 7.1, 7.1(1), 7.1(2), 7.2, 7.2(1), 7.2(2), 7.2(3)
+    给 LLM 提供完整 sub_item_no 取值范围，禁止编造。
+    """
     rules = get_rules()
     refs = get_skill_references(contract_type)
 
@@ -103,6 +124,11 @@ def build_review_prompt(
         "## 待审查条款（clause_id 为条款唯一编号，输出时必须原样引用）\n"
         + clauses_text
     )
+    if subitems_index:
+        user_parts.append(
+            "## 子项索引（sub_item_no 取值集合；输出 sub_item_no 时只能从下列中选，禁止编造）\n"
+            + subitems_index
+        )
     user_parts.append(
         f"## 任务\n逐条对照以上参考与规则库识别风险条款，输出 JSON（risks 为数组，未发现风险时为空数组）：\n{RISK_SCHEMA_HINT}"
     )
@@ -112,12 +138,16 @@ def build_review_prompt(
         "## 硬性约束\n"
         "1. clause_id 只能取自上述编号，不得编造\n"
         "2. matched_rules 只能引用规则库中的规则号；确有风险但规则库未覆盖时可为空数组\n"
-        "3. suggestion 必须是完整条款文本（不是修改意见），将直接整段替换原条款\n"
-        "4. 未命中风险的条款不要输出；宁缺勿滥，不确定的不输出\n"
-        "5. 每个 JSON 对象必须完整闭合；若条款较多，只输出最重要的风险项\n"
-        "6. level 仅使用 high / medium / low（与现有 schema 保持一致）；若内部按 P0/P1/P2 思考，请先映射：P0=high, P1=medium, P2=low\n"
-        "7. issue/impact 用简体中文\n"
-        "8. Plan B 编辑约束：每个风险只代表一个被修改单位；replace 且 sub_item_no 非空时，suggestion 必须且只能以该 sub_item_no 开头，后跟空白/冒号/顿号，且不得出现其他 X.Y 编号；replace 且 sub_item_no 为空（整条款）时，suggestion 只允许针对该整条款，不得在文本里携带 X.Y 子项编号（禁止把多个子项打包）；如需修改多个子项请拆成多个 RiskItem 提交；insert_* 必须给出 anchor_clause_id，suggestion 必须包含新单位自己的完整编号与正文；delete 必须引用真实存在的 clause_id 或 sub_item_no"
+        "3. 未命中风险的条款不要输出；宁缺勿滥，不确定的不输出\n"
+        "4. 每个 JSON 对象必须完整闭合；若条款较多，只输出最重要的风险项\n"
+        "5. level 仅使用 high / medium / low（与现有 schema 保持一致）；若内部按 P0/P1/P2 思考，请先映射：P0=high, P1=medium, P2=low\n"
+        "6. issue/impact 用简体中文\n"
+        "7. Plan B 编辑约束：每个风险只代表一个被修改单位；\n"
+        "   - replace 且 sub_item_no 非空时，suggestion **不得携带编号前缀**（不写「3.1」「（1）」），仅写正文；系统会按原文 display_no 自动拼回；\n"
+        "   - replace 且 sub_item_no 为空（整条款）时，suggestion 也只写整条款正文，且不得在文本里携带 X.Y 子项编号（禁止把多个子项打包）；\n"
+        "   - insert_* 必须给出 anchor_clause_id，suggestion 必须以新编号 + 全角分隔符开头；\n"
+        "   - delete 必须引用真实存在的 clause_id 或 sub_item_no\n"
+        "8. 中文合同正文统一使用全角中文括号「（Z）」；禁止在 suggestion 正文里使用半角数字编号括号 (1)、(2)、(3)，否则与原合同版式不一致\n"
     )
     user = "\n\n".join(user_parts)
     return [

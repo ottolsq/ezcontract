@@ -594,15 +594,122 @@ def _apply_action_to_doc(doc, action: EditAction, clause_map: dict) -> str | Non
                 _write_minimal_runs(paras[anchor_idx], "\n".join(lines), 0, None, rpr)
                 return None
         # 多行新内容（如"第X条 标题\nX.1 ...\nX.2 ..."）拆成多段插入，每段按角色套样式。
+        inserted_from = None
         for offset, line in enumerate(_split_insert_text(action.new_text)):
             insert_pos = anchor_idx + offset if action.operation == "insert_after" else anchor_idx - 1 - offset
             # insert_before 顺序反着插（让最终顺序正确）
             if action.operation == "insert_before":
                 _insert_paragraph_before_idx(paras, anchor_idx - offset, line)
+                inserted_from = anchor_idx
             else:
                 _insert_paragraph_after(paras, insert_pos, line)
+                if inserted_from is None:
+                    inserted_from = insert_pos + 1
+        # 整条款插入：顺延后续条款编号（第X条 → 第X+1条；其下 X.Y 的 X 同步 +1）
+        if _is_title_text(_split_insert_text(action.new_text)[0] if action.new_text else ""):
+            _renumber_clause_titles_after(paras, inserted_from if inserted_from is not None else anchor_idx)
         return None
     return f"未知操作 {action.operation}"
+
+
+_CN_NUM = "零一二三四五六七八九"
+
+
+def _cn_to_int(cn: str) -> int:
+    """中文条款序数 → 整数（第十二条 → 12；支持到百）。"""
+    cn = cn.strip()
+    if cn.isdigit():
+        return int(cn)
+    units = {"十": 10, "百": 100}
+    total, num = 0, 0
+    for ch in cn:
+        if ch in "零〇":
+            continue
+        if ch in _CN_NUM:
+            num = _CN_NUM.index(ch)
+        elif ch in units:
+            u = units[ch]
+            total += (num or 1) * u
+            num = 0
+        elif ch.isdigit():
+            num = num * 10 + int(ch)
+        else:
+            return None
+    return total + num
+
+
+def _int_to_cn(n: int) -> str:
+    """整数 → 中文条款序数（12 → 十二；支持到百）。保持原文风格（全中文）。"""
+    if n < 10:
+        return _CN_NUM[n]
+    if n < 20:
+        return "十" + (_CN_NUM[n - 10] if n > 10 else "")
+    if n < 100:
+        tens, ones = divmod(n, 10)
+        return _CN_NUM[tens] + "十" + (_CN_NUM[ones] if ones else "")
+    return str(n)
+
+
+def _renumber_clause_titles_after(paras: list, from_idx: int) -> None:
+    """整条款插入后：把 from_idx 之后所有「第X条」标题段顺延 +1，
+    并同步其后 X.Y 子项的 X 前缀（3.1 → 4.1）。
+
+    倒序遍历避免中文数字连锁覆盖；只改行首编号，正文不动。
+    标题段先记录旧编号（供子项匹配），再统一 +1，最后按旧编号同步子项。
+    """
+    # pass 1：记录所有标题段（下标、旧序数）——在改写前完成，避免读新编号
+    titles: list[tuple[int, int]] = []
+    for i in range(from_idx, len(paras)):
+        text = (paras[i].text or "").split("\n")[0].strip()
+        m = re.match(r"^[\s　]*第([一二三四五六七八九十百零〇\d]+)条", text)
+        if not m:
+            continue
+        n = _cn_to_int(m.group(1))
+        if n is None:
+            continue
+        titles.append((i, n))
+    if not titles:
+        return
+
+    # pass 2：倒序把标题 +1（含标题段内的 X.Y 行）
+    for i, n in reversed(titles):
+        para = paras[i]
+        new_n = n + 1
+        lines = (para.text or "").split("\n")
+        old_token = re.match(r"^([\s　]*)第([一二三四五六七八九十百零〇\d]+)条", lines[0])
+        if not old_token:
+            continue
+        # 保留原 token 风格：原文全中文 → 中文；原文阿拉伯数字 → 阿拉伯
+        raw_no = old_token.group(2)
+        new_no = _int_to_cn(new_n) if not raw_no.isdigit() else str(new_n)
+        lines[0] = lines[0][: old_token.start(2)] + new_no + lines[0][old_token.end(2):]
+        # 同段后续行的 X.Y 前缀同步
+        for li in range(1, len(lines)):
+            mm = re.match(r"^([\s　]*)(\d+)\.(\d+)", lines[li])
+            if mm and int(mm.group(2)) == n:
+                lines[li] = lines[li][: mm.start(2)] + str(new_n) + lines[li][mm.end(2):]
+        rpr = _rpr_at_char(para, 0)
+        _write_minimal_runs(para, "\n".join(lines), 0, None, rpr)
+
+    # pass 3：每个标题段之后的独立 X.Y 段（直到下个标题段），X 从旧编号改为 +1
+    for i, n in titles:
+        j = i + 1
+        while j < len(paras):
+            t2 = (paras[j].text or "").split("\n")[0].strip()
+            if re.match(r"^[\s　]*第[一二三四五六七八九十百零〇\d]+条", t2):
+                break
+            para = paras[j]
+            lines = (para.text or "").split("\n")
+            changed = False
+            for li, ln in enumerate(lines):
+                mm = re.match(r"^([\s　]*)(\d+)\.(\d+)", ln)
+                if mm and int(mm.group(2)) == n:
+                    lines[li] = ln[: mm.start(2)] + str(n + 1) + ln[mm.end(2):]
+                    changed = True
+            if changed:
+                rpr = _rpr_at_char(para, 0)
+                _write_minimal_runs(para, "\n".join(lines), 0, None, rpr)
+            j += 1
 
 
 def _resolve_insert_anchor_idx(clause: Clause, action: EditAction, paras: list) -> int | None:
@@ -646,6 +753,21 @@ def _resolve_insert_anchor_idx(clause: Clause, action: EditAction, paras: list) 
         if idx is not None:
             return idx
         return None
+
+    # 整条款插入（suggestion 首行是 第X条）：锚定条款标题段，
+    # insert_before → 标题前；insert_after → 最后子项行（条款末尾）
+    first_line = (action.new_text or "").strip().splitlines()[0] if action.new_text else ""
+    if _is_title_text(first_line):
+        if action.operation == "insert_before":
+            return clause.start_idx
+        # insert_after 整条款：落在该条款最后一个子项/正文段之后
+        if clause.subitems:
+            last_sub = max(
+                clause.subitems,
+                key=lambda s: (s.start_idx, s.line_in_paragraph),
+            )
+            return last_sub.start_idx
+        return clause.end_idx
 
     # 策略 3：锚定最后一个子项行（而非标题段）
     if clause.subitems:

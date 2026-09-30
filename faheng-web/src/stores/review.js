@@ -6,7 +6,7 @@ import {
   replaceParagraphText,
   insertParagraphText,
   deleteParagraphText,
-  lineMatchesNo,
+  renumberSiblingsAfterInsert,
   SUBITEM_RE,
 } from './review-diff'
 
@@ -275,6 +275,10 @@ export const useReviewStore = defineStore('review', {
           // 跨条款插入：先按锚点子项找到所在 clause，插入；前端多 clause 由后端负责跨条款导出，
           // 这里仍写到当前 clauseId 的 visual（仅本地展示，导出以最终后端为准）。
           html = insertParagraphText(html, anchorSubNo, finalText, position)
+          // 插入新编号后重排同级兄弟编号（2.1/2.2/2.3 之间插 2.2 → 2.3/2.4），
+          // 避免 1,2,2 重复编号
+          const insM = SUBITEM_RE.exec(finalText.trim())
+          if (insM) html = renumberSiblingsAfterInsert(html, insM[1], finalText.trim())
           text = this._applyLineInsert(text, anchorSubNo, finalText, position)
           continue
         }

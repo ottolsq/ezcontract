@@ -38,9 +38,10 @@ function innermostToken(s) {
 
 /** 行的字面编号是否与 subItemNo 一致。
  * - 完整编号相等（1.1 ↔ 1.1 / 7.2（1）↔ 7.2(1)）；
- * - 最内层 token 相等（行首只写内层的「（1）乙方…」↔ 7.2(1)）；
  * - 双方均无内层时按基编号比对；
- * - 裸基项行（7.2 乙方违约）不算 7.2(1) 的匹配（避免父项误吃子项替换）。 */
+ * - 裸基项行（7.2 乙方违约）不算 7.2(1) 的匹配（避免父项误吃子项替换）。
+ * 注意：行首只写内层的「（1）乙方…」不带父级上下文，本函数不匹配 ——
+ * 由 lineMatchesNoInContext 带当前父级基编号做上下文比对。 */
 export function lineMatchesNo(line, subItemNo) {
   const m = SUBITEM_RE.exec(line || '')
   if (!m) return false
@@ -49,9 +50,37 @@ export function lineMatchesNo(line, subItemNo) {
   if (p === n) return true
   const pi = innermostToken(m[1])
   const ni = innermostToken(subItemNo)
-  if (pi && ni) return pi === ni
+  if (pi && ni) return false // 内层 token 相等不等于同一子项（6.1(3) ≠ 6.2(3)）
   if (!pi && !ni) return p === normNo(baseNo(subItemNo))
   return false
+}
+
+/** 带父级上下文的行匹配：currentBase 是该行所属的 X.Y 基编号。
+ * 行首「（1）乙方…」只写内层编号，其父级由前一个 X.Y 行决定：
+ * 只有 currentBase === subItemNo 的基编号时才算命中。 */
+export function lineMatchesNoInContext(line, subItemNo, currentBase) {
+  const m = SUBITEM_RE.exec(line || '')
+  if (!m) return false
+  const p = normNo(m[1])
+  const n = normNo(subItemNo)
+  if (p === n) return true
+  // 行首只写内层（（3）…）且父级匹配
+  const lineIsInnerOnly = /^[（(]/.test((m[1] || '').trim())
+  const lineInner = innermostToken(m[1])
+  const subInner = innermostToken(subItemNo)
+  if (lineIsInnerOnly && lineInner && subInner) {
+    return lineInner === subInner && currentBase === normNo(baseNo(subItemNo))
+  }
+  return lineMatchesNo(line, subItemNo)
+}
+
+/** 行的字面编号前缀（含尾随分隔符）的基编号（X.Y），非基编号行返回 null。 */
+function lineBaseNo(line) {
+  const m = SUBITEM_RE.exec(line || '')
+  if (!m) return null
+  const t = m[1].trim()
+  if (/^[（(]/.test(t)) return null // 独立（Z）行无基编号
+  return normNo(baseNo(t))
 }
 
 /** 条款标题行（第X条）—— 替换永不触碰 */
@@ -164,16 +193,20 @@ export function spliceReplacedSegments(clauseHtml, matches) {
 }
 
 /** 按子项编号找 <p> 下标（支持 X.Y(Z) / 全角括号 / 独立（Z）行）。
- * 只匹配 <p> 顶层节点的首段纯文本，保证对齐 docx 解析的段落切分。
+ * 逐段逐行扫描，维护「当前父级基编号」上下文：
+ * 行首 X.Y → 更新 currentBase；独立（Z）行属于 currentBase。
+ * 这样 6.2(3) 不会误命中 6.1 下的（3）行。
  */
 export function findParagraphIndexBySubItemNo(clauseHtml, subItemNo) {
   if (!clauseHtml || !subItemNo) return -1
   const paragraphs = splitParagraphs(clauseHtml)
+  let currentBase = null
   for (let i = 0; i < paragraphs.length; i++) {
-    // 优先整段编号匹配；同段多行时按行匹配（w:br → \n）
-    if (lineMatchesNo(paragraphs[i].text.split('\n')[0], subItemNo)) return i
-    for (const ln of paragraphs[i].text.split('\n')) {
-      if (lineMatchesNo(ln, subItemNo)) return i
+    const lines = paragraphs[i].text.split('\n')
+    for (const ln of lines) {
+      const b = lineBaseNo(ln)
+      if (b) currentBase = b
+      if (lineMatchesNoInContext(ln, subItemNo, currentBase)) return i
     }
   }
   return -1
@@ -198,13 +231,19 @@ export function replaceParagraphText(clauseHtml, subItemNo, newText) {
   }
   if (idx < 0) return null
 
+  // 子标题行保护（与后端 _is_subitem_heading_line 对齐）：
+  // 「编号 + ≤12字短名称 + 下方有内容行」是子标题（如「3.1 租金标准」），
+  // 替换落到其下第一条内容行（（Z）嵌套行 / 正文段），子标题行原样保留。
+  const shifted = shiftHeadingToContent(paragraphs, idx, subItemNo)
+  if (shifted !== null) idx = shifted
+
   const target = paragraphs[idx]
   const lines = target.text.split('\n')
-  // 目标行：整段无换行 → 第 0 行；多行 → 编号匹配的行（无编号兜底第 0 行）
+  // 目标行：整段无换行 → 第 0 行；多行 → 带父级上下文编号匹配的行
   let lineIdx = 0
   if (lines.length > 1 && subItemNo) {
-    const found = lines.findIndex((ln) => lineMatchesNo(ln, subItemNo))
-    lineIdx = found >= 0 ? found : 0
+    const found = findLineIdxWithContext(paragraphs, idx, subItemNo)
+    if (found >= 0) lineIdx = found
   }
   // 行首字面编号前缀（含尾随分隔符），替换后自动补回，不丢号
   const line = lines[lineIdx]
@@ -300,7 +339,7 @@ export function insertParagraphText(clauseHtml, anchorSubItemNo, newText, positi
   // 同段多子项（w:br 分行）：把新行插到目标行之后/之前（行内插入），而非另起 <p>
   const anchorLines = anchor.text.split('\n')
   if (anchorSubItemNo && anchorLines.length > 1) {
-    const lineIdx = anchorLines.findIndex((ln) => lineMatchesNo(ln, anchorSubItemNo))
+    const lineIdx = findLineIdxWithContext(paragraphs, anchorIdx, anchorSubItemNo)
     if (lineIdx >= 0) {
       const insertAtLine = position === 'after' ? lineIdx + 1 : lineIdx
       anchorLines.splice(insertAtLine, 0, text)
@@ -347,6 +386,162 @@ export function insertParagraphText(clauseHtml, anchorSubItemNo, newText, positi
   return paragraphs.map((p) => p.raw).join('')
 }
 
+/** 插入新子项后重排同级编号：从插入的编号起，把后续同级子项编号依次 +1。
+ * 例：2.1/2.2/2.3 之间插入新 2.2 → 原 2.2→2.3、2.3→2.4（同 X 前缀的 Y 序列）。
+ * 嵌套（Z）：7.2 下（1）（2）之间插新（2）→ 原（2）→（3）、（3）→（4）。
+ * 新插入的内容行（文本 === insertedText，含 inserted class 段）跳过。 */
+export function renumberSiblingsAfterInsert(clauseHtml, insertedNo, insertedText = '') {
+  if (!clauseHtml || !insertedNo) return clauseHtml
+  const m = SUBITEM_RE.exec(insertedNo.trim())
+  if (!m) return clauseHtml
+  const inserted = m[1].trim()
+  // 归一插入编号：X.Y(Z) / 纯（Z）→ 父级 + 内层 Z；纯 X.Y → X 前缀 + 序号 Y
+  const insInner = innermostToken(inserted) // '7.2(2)'→'2'；'（2）'→'2'；'2.2'→null
+  const insBaseTok = insInner !== null ? inserted.replace(/[（(][^）)]+[）)]\s*$/, '').trim() : inserted
+  const insParent = insInner !== null ? normNo(insBaseTok) : null // '7.2'；纯（Z）时 ''
+  const insX = insInner === null ? (inserted.match(/^(\d+)\./)?.[1] ?? null) : null
+  const insY = insInner === null ? (inserted.match(/\.(\d+)$/)?.[1] ?? null) : null
+  if (insInner === null && (insX === null || insY === null)) return clauseHtml
+
+  const paragraphs = splitParagraphs(clauseHtml)
+  const skipText = (insertedText || '').trim()
+  let started = false
+  let currentParent = null
+  for (let i = 0; i < paragraphs.length; i++) {
+    const p = paragraphs[i]
+    const isNewInsert = /class\s*=\s*"[^"]*\binserted\b/.test(p.openTag)
+    const lines = p.text.split('\n')
+    let changed = false
+    for (let li = 0; li < lines.length; li++) {
+      const lm = SUBITEM_RE.exec(lines[li])
+      if (!lm) continue
+      const tok = lm[1].trim()
+      const tokInnerOnly = /^[（(]/.test(tok)
+      let sameLevel = false
+      let curNo = null
+      if (insInner === null) {
+        // X.Y 插入：同级 = 同 X 前缀的基项行（2.2/2.3 都属于 X=2）
+        const tokX = tok.match(/^(\d+)\./)?.[1] ?? null
+        if (!tokInnerOnly && tokX === insX) {
+          sameLevel = true
+          curNo = tok.match(/\.(\d+)$/)?.[1] ?? null
+        }
+      } else {
+        // （Z）/ X.Y(Z) 插入：同级 = 同父级下的内层行
+        if (tokInnerOnly && currentParent !== null && currentParent === insParent) {
+          sameLevel = true
+          curNo = innermostToken(tok)
+        }
+      }
+      // 维护父级上下文（X.Y 行更新 currentParent，供后续（Z）行判级）
+      if (!tokInnerOnly) currentParent = normNo(baseNo(tok))
+      if (!sameLevel || curNo === null) continue
+      // 新插入内容行跳过（行文本与 insertedText 一致）
+      if (skipText && (lines[li].trim() === skipText || lines[li].includes(skipText))) continue
+      if (!started) {
+        if (Number(curNo) < Number(insInner ?? insY)) continue
+        started = true
+      }
+      if (tokInnerOnly) {
+        const newInner = bumpInnerToken(curNo)
+        lines[li] = lines[li].replace(/^[（(][^）)]+[）)]/, (s) =>
+          s.replace(/[^（()）]+/, newInner),
+        )
+      } else {
+        const newTok = tok.replace(/(\.\d+)$/, (s) => `.${Number(s.slice(1)) + 1}`)
+        lines[li] = lines[li].replace(lm[0], lm[0].replace(tok, newTok))
+      }
+      changed = true
+    }
+    if (changed) {
+      const replacedTag = withReplacedClass(p.openTag)
+      const span = extractFirstSpanWrapper(p.innerHtml || '')
+      const bodyHtml = `${span.open}${escapeHtml(lines.join('\n'))}${span.close}`
+      paragraphs[i] = {
+        ...p,
+        raw: `${replacedTag}${bodyHtml}</p>`,
+        text: lines.join('\n'),
+        openTag: replacedTag,
+        innerHtml: bodyHtml,
+      }
+    }
+  }
+  return paragraphs.map((p) => p.raw).join('')
+}
+
+/** （Z）token 序号 +1：（3）→（4）；（a）→（b）；（z）→（aa）循环。 */
+function bumpInnerToken(t) {
+  if (/^\d+$/.test(t)) return String(Number(t) + 1)
+  const s = t.toLowerCase()
+  if (!/^[a-z]+$/.test(s)) return t
+  let num = 0
+  for (const ch of s) num = num * 26 + (ch.charCodeAt(0) - 96)
+  num += 1
+  let out = ''
+  while (num > 0) {
+    const r = (num - 1) % 26
+    out = String.fromCharCode(97 + r) + out
+    num = Math.floor((num - 1) / 26)
+  }
+  return out
+}
+
+/** 同段多行时按父级上下文找目标行号；找不到返回 -1。 */
+function findLineIdxWithContext(paragraphs, idx, subItemNo) {
+  const lines = paragraphs[idx].text.split('\n')
+  let currentBase = null
+  // 本段之前的最后基编号作为初始上下文
+  for (let i = 0; i < idx; i++) {
+    for (const ln of paragraphs[i].text.split('\n')) {
+      const b = lineBaseNo(ln)
+      if (b) currentBase = b
+    }
+  }
+  for (let li = 0; li < lines.length; li++) {
+    const b = lineBaseNo(lines[li])
+    if (b) currentBase = b
+    if (lineMatchesNoInContext(lines[li], subItemNo, currentBase)) return li
+  }
+  return -1
+}
+
+/** 子标题行检测 + 替换目标下移（与后端 _is_subitem_heading_line /
+ * _shift_to_first_content_below 对齐）。
+ * 目标段是「编号 + 短名称（≤12字，无标点）」且下方（同段后续行 / 后续段
+ * 的（Z）行或正文）有内容行 → 返回内容行所在段下标；否则返回 null。 */
+function shiftHeadingToContent(paragraphs, idx, subItemNo) {
+  if (!subItemNo) return null
+  const target = paragraphs[idx]
+  const lines = target.text.split('\n')
+  // 仅看编号匹配的首行
+  let lineIdx = 0
+  if (lines.length > 1) {
+    const found = findLineIdxWithContext(paragraphs, idx, subItemNo)
+    if (found < 0) return null
+    lineIdx = found
+  } else if (!lineMatchesNo(lines[0], subItemNo)) {
+    return null
+  }
+  const line = lines[lineIdx]
+  const pm = SUBITEM_RE.exec(line)
+  if (!pm) return null
+  const rest = line.slice(pm[0].length).trim()
+  if (!rest || rest.length > 12) return null
+  if (/[。；;，,]/.test(rest)) return null
+  // 下方内容：同段后续非空行
+  if (lineIdx + 1 < lines.length && lines[lineIdx + 1].trim()) return idx
+  // 跨段：后续段的（Z）/正文（遇到下一个 X.Y 基编号或标题行停）
+  for (let i = idx + 1; i < paragraphs.length; i++) {
+    const first = paragraphs[i].text.split('\n')[0].trim()
+    if (!first) continue
+    if (isClauseTitleLine(first)) return null
+    const bm = SUBITEM_RE.exec(first)
+    if (bm && !/^[（(]/.test(bm[1].trim())) return null // 下一个 X.Y 子项 → 无内容行
+    return i
+  }
+  return null
+}
+
 /** 删除指定子项：整段独占时删 <p>；同段多子项（w:br 分行）时仅删目标行。 */
 export function deleteParagraphText(clauseHtml, subItemNo) {
   if (!clauseHtml) return clauseHtml
@@ -359,7 +554,7 @@ export function deleteParagraphText(clauseHtml, subItemNo) {
   const lines = target.text.split('\n')
   if (lines.length > 1) {
     // 同段多子项：只删目标行，其余行保留
-    const lineIdx = lines.findIndex((ln) => lineMatchesNo(ln, subItemNo))
+    const lineIdx = findLineIdxWithContext(paragraphs, idx, subItemNo)
     if (lineIdx >= 0) {
       lines.splice(lineIdx, 1)
       const replacedTag = withReplacedClass(target.openTag)

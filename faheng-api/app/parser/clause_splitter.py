@@ -287,7 +287,9 @@ def split_clauses(
 
     clauses: list[Clause] = []
     for n, start in enumerate(clause_starts):
+        # end 语义：下一个条款起始 / 签署区起始 / 文档末尾（开区间边界）
         end = clause_starts[n + 1] if n + 1 < len(clause_starts) else tail_from
+        end = min(end, len(paragraphs) - 1)  # 边界保护：无签署区时不越界
         block = paragraphs[start:end]
         non_empty_text = [p for p in block if p.text.strip()]
         if not non_empty_text:

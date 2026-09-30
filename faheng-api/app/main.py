@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.llm.client import chat_text
-from app.routers import auth, draft, review
+from app.routers import auth, compliance, draft, notifications, review
 
 app = FastAPI(title="法衡 AI 企业多智能体工作台 API (Demo)", version="0.1.0")
 
@@ -32,6 +32,13 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(review.router, dependencies=[Depends(auth.require_auth)])
 app.include_router(draft.router, dependencies=[Depends(auth.require_auth)])
+app.include_router(compliance.router, dependencies=[Depends(auth.require_auth)])
+app.include_router(notifications.router, dependencies=[Depends(auth.require_auth)])
+
+# 履约模块持久化初始化（SQLite：建目录建表 + 清扫上次进程遗留的 processing 状态）
+from app.services.compliance_db import init_db as _compliance_init_db  # noqa: E402
+
+_compliance_init_db()
 
 # 部署形态：单容器由 uvicorn 同时 serve 前端 build 产物
 # （本地 dev 形态：web_dist/ 不存在，StaticFiles 不挂载，行为不变）

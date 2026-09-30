@@ -25,6 +25,7 @@ AI合同智能处理系统_技术方案.md
 _test_sig.docx
 *.tar
 q.md
+performancePlan.md
 
 # Claude Code / IDE / 系统
 .claude/

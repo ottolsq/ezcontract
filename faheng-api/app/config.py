@@ -51,5 +51,15 @@ class Settings:
     # 演示 token 有效期（秒）—— 进程内存白名单，重启后失效需重新登录
     AUTH_TOKEN_TTL: int = int(os.getenv("AUTH_TOKEN_TTL", "86400"))
 
+    # ── 履约提醒模块（项目首个持久化模块：SQLite，stdlib）──
+    # 库文件位置：faheng-api/data/compliance.db（.gitignore 已忽略 data/）
+    COMPLIANCE_DB_PATH: Path = BASE_DIR / "data" / "compliance.db"
+    COMPLIANCE_TEMPERATURE: float = 0.0
+    # chat_json 的截断抢救只认 risks 字段，对 nodes 无效 → 控制输出规模
+    COMPLIANCE_MAX_TOKENS: int = 6000
+    # 周期义务初始展开期数 / 单组实例上限
+    COMPLIANCE_EXPAND_COUNT: int = 4
+    COMPLIANCE_MAX_INSTANCES: int = 24
+
 
 settings = Settings()

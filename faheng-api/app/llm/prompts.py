@@ -211,3 +211,85 @@ def build_revise_prompt(current_markdown: str, instruction: str) -> list[dict]:
         {"role": "system", "content": DRAFT_SYSTEM},
         {"role": "user", "content": user},
     ]
+
+
+# ── 履约节点提取 ──
+
+COMPLIANCE_SYSTEM = (
+    "你是合同履约节点提取助手。从候选条款中提取所有带时间约束的履约义务，"
+    "把相对时间（签署后N日 / 每期开始前N日 / 终止后N年）转换为「锚点 + 偏移」结构，"
+    "具体日期由系统代码计算，你绝不自己做日期加减。只输出 JSON，"
+    "不输出任何解释、markdown 代码块或其他文本。"
+)
+
+COMPLIANCE_SCHEMA_HINT = """{
+  "meta": {
+    "sign_date": "2026-09-28",
+    "contract_start": "2026-10-01",
+    "contract_end": "2028-09-30"
+  },
+  "nodes": [
+    {
+      "ref": "C04#4.1(2)",
+      "node_type": "payment",
+      "title": "支付季度租金",
+      "description": "每季度初前7日内支付当期租金4200元/月",
+      "anchor": "contract_start",
+      "anchor_date": "",
+      "offset_days": -7,
+      "offset_months": 0,
+      "recurring": "quarterly",
+      "needs_review": false
+    },
+    {
+      "ref": "C04#4.2(1)",
+      "node_type": "deposit",
+      "title": "支付押金",
+      "description": "签署后3日内支付押金8400元",
+      "anchor": "sign_date",
+      "anchor_date": "",
+      "offset_days": 3,
+      "offset_months": 0,
+      "recurring": "none",
+      "needs_review": false
+    }
+  ]
+}"""
+
+
+def build_compliance_prompt(
+    candidates_text: str,
+    meta_lines: str = "",
+) -> list[dict]:
+    """履约提取 prompt：候选条款（带 ref）+ 元信息行 + schema + 硬性约束。"""
+    user_parts: list[str] = []
+    user_parts.append(
+        "## 候选条款（ref 为候选唯一编号，输出时必须原样引用，禁止编造）\n"
+        + candidates_text
+    )
+    if meta_lines:
+        user_parts.append("## 合同元信息（仅供提取 meta，不作为节点来源）\n" + meta_lines)
+    user_parts.append(
+        "## 任务\n"
+        "从候选条款中提取所有带时间约束的履约义务（付款/押金/交付/验收/到期/通知等），"
+        "输出 JSON（nodes 为数组，无合适节点时为空数组）：\n" + COMPLIANCE_SCHEMA_HINT
+    )
+    user_parts.append(
+        "## 硬性约束\n"
+        "1. ref 只能取自候选列表中的编号，每个 ref 至多输出一个节点\n"
+        "2. 只输出带时间约束的义务节点；纯定义（如「租金指…」）、无期限义务不输出；"
+        "违约金/解除权等救济条款不是履约义务，不输出\n"
+        "3. anchor 语义：absolute=条款里有明确日期（anchor_date 原样抄 YYYY-MM-DD）；"
+        "sign_date=自签署日起算；contract_start=自合同起始日起算；contract_end=自合同到期/终止日起算\n"
+        "4. 「每期开始前N日内支付」→ anchor=contract_start + offset_days=-N + recurring=周期；"
+        "「签署后N日内」→ anchor=sign_date + offset_days=N\n"
+        "5. 「终止后N年/月」→ anchor=contract_end + offset_months 换算为月（2年=24）\n"
+        "6. 依赖未来事件（验收后、通知后、交接后）无法定具体日期 → needs_review=true\n"
+        "7. meta 三字段提取不到就留空字符串，不要编造\n"
+        "8. title 用简体中文，12 字以内；node_type 用英文枚举\n"
+        "9. 只输出 JSON，确保所有括号引号完整闭合\n"
+    )
+    return [
+        {"role": "system", "content": COMPLIANCE_SYSTEM},
+        {"role": "user", "content": "\n\n".join(user_parts)},
+    ]

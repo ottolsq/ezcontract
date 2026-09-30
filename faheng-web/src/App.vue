@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from './stores/auth'
+import NotificationBell from './components/NotificationBell.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -25,10 +26,12 @@ async function onLogout() {
       <nav v-if="auth.isLoggedIn" class="nav">
         <router-link to="/draft">合同起草</router-link>
         <router-link to="/review">合同审查</router-link>
+        <router-link to="/compliance">履约提醒</router-link>
       </nav>
 
       <div class="right-area">
         <template v-if="auth.isLoggedIn">
+          <NotificationBell />
           <span class="user-chip">
             <span class="user-avatar">{{ auth.username.charAt(0).toUpperCase() }}</span>
             <span class="user-name">{{ auth.username }}</span>

@@ -24,6 +24,12 @@ const router = createRouter({
       component: () => import('../views/ReviewView.vue'),
       meta: { requiresAuth: true },
     },
+    {
+      path: '/compliance',
+      name: 'compliance',
+      component: () => import('../views/ComplianceView.vue'),
+      meta: { requiresAuth: true },
+    },
   ],
 })
 

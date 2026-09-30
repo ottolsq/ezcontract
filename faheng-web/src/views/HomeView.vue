@@ -30,10 +30,11 @@ const today = new Date().toLocaleDateString('zh-CN')
         <div class="flow">上传 → AI 审查 → 三栏工作台 → 导出</div>
       </div>
 
-      <div class="card card-coming">
+      <div class="card" @click="router.push('/compliance')">
         <div class="card-icon">🔔</div>
-        <h2>履约提醒 <span class="tag">规划中</span></h2>
-        <p>自动提取付款日、交付日等履约节点，到期前智能提醒。</p>
+        <h2>履约提醒</h2>
+        <p>自动提取付款日、交付日等履约节点，到期前一天智能提醒。</p>
+        <div class="flow">上传 → AI 提取节点 → 到期提醒</div>
       </div>
 
       <div class="card card-coming">

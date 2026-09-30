@@ -42,8 +42,14 @@ function goReport() {
 }
 
 async function exportContract() {
-  await download(`/review/${store.reviewId}/export`, `修改版合同.docx`)
-  ElMessage.success('已导出修改后合同')
+  const info = await download(`/review/${store.reviewId}/export`, `修改版合同.docx`)
+  if (info?.skippedActions?.length) {
+    ElMessage.warning(
+      `已导出，但有 ${info.skippedActions.length} 条建议未能定位到条款位置，未写入文档：${info.skippedActions[0]}${info.skippedActions.length > 1 ? ' 等' : ''}`,
+    )
+  } else {
+    ElMessage.success('已导出修改后合同')
+  }
 }
 
 async function exportReport() {

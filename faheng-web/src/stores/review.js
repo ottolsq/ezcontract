@@ -6,8 +6,24 @@ import {
   replaceParagraphText,
   insertParagraphText,
   deleteParagraphText,
+  lineMatchesNo,
   SUBITEM_RE,
 } from './review-diff'
+
+/** 构造匹配 subNo 行首编号的正则（支持 X.Y / X.Y(Z) / 全角括号 → 归一后比对） */
+function subNoLineRe(subNo) {
+  const variants = new Set([subNo, subNo.replace(/[(（][0-9０-９a-zA-Z]+[)）]/g, '')])
+  const body = [...variants]
+    .filter(Boolean)
+    .map((v) =>
+      v
+        .replace(/\./g, '\\.')
+        .replace(/\(/g, '[(（]')
+        .replace(/\)/g, '[)）]'),
+    )
+    .join('|')
+  return new RegExp(`^[\\s　]*(?:${body})[\\s　:：、]`)
+}
 
 export const useReviewStore = defineStore('review', {
   state: () => ({
@@ -167,10 +183,10 @@ export const useReviewStore = defineStore('review', {
     },
 
     /** 按行替换原 text 中的目标行，返回新的 text。
-     * - 若 subNo 非空，定位原 text 中以该编号开头的行替换；
-     * - 若 finalText 不带原编号，自动把原编号前缀补回去；
+     * - 若 subNo 非空，定位原 text 中以该编号开头的行替换（含 X.Y(Z)/全角括号）；
+     * - 若 finalText 不带原编号，自动把原行字面编号前缀补回去；
      * - 若无 subNo 且 finalText 是单段带 X.Y，回退到按该 X.Y 处理；
-     * - 其它情况按段数对齐原行替换。
+     * - 其它情况（整条款多段替换）：仅替换首行之后的正文行，标题行保留。
      */
     _applyLineReplace(originalText, subNo, finalText) {
       const lines = originalText
@@ -185,7 +201,7 @@ export const useReviewStore = defineStore('review', {
 
       // 命中子项编号 → 替换原 text 中以该编号开头的行
       if (subNo) {
-        const re = new RegExp(`^${subNo.replace(/\./g, '\\.')}[\\s　:：、]`)
+        const re = subNoLineRe(subNo)
         let replaced = false
         const out = lines.map((ln) => {
           if (!replaced && re.test(ln)) {
@@ -206,10 +222,15 @@ export const useReviewStore = defineStore('review', {
         if (m) return this._applyLineReplace(originalText, m[1], newLines[0])
       }
 
-      // 兜底：多段 finalText 按段数对齐原行（保留行结构，避免整段覆盖）
+      // 整条款替换：标题行（第X条）保留，从首个正文行开始替换；
+      // 原行数多于新行数时截断，新行更多时追加。
+      const firstBodyIdx = lines.findIndex((ln) => !/^\s*第[一二三四五六七八九十百零〇\d]+条/.test(ln))
+      const start = firstBodyIdx > 0 ? firstBodyIdx : 0
       const out = [...lines]
-      for (let i = 0; i < newLines.length && i < out.length; i++) {
-        out[i] = newLines[i]
+      for (let i = 0; i < newLines.length; i++) {
+        const target = start + i
+        if (target < out.length) out[target] = newLines[i]
+        else out.push(newLines[i])
       }
       return out.join('\n')
     },
@@ -264,11 +285,13 @@ export const useReviewStore = defineStore('review', {
           continue
         }
 
-        // replace：精确按子项编号替换；保留原 <p> 开标签 + 样式
+        // replace：精确按子项编号替换目标行的编号后正文；保留标题与其它行
         if (subNo) {
-          html = replaceParagraphText(html, subNo, finalText)
+          const out = replaceParagraphText(html, subNo, finalText)
+          if (out !== null && out !== undefined) html = out
+          // 定位失败 → 不乱替换（保留原文），决策在导出时由后端提示
         } else {
-          // 兜底：Jaccard 多段匹配（保留旧实现以兼容整条款风险）
+          // 整条款：保留标题行，替换正文行（不再 Jaccard 乱猜段落）
           const segments = finalText
             .split(/\r?\n/)
             .map((s) => s.trim())
@@ -287,12 +310,12 @@ export const useReviewStore = defineStore('review', {
       ]
     },
 
-    /** 在原 text 中 anchor 子项行 后/前 插入新单位文本 */
+    /** 在原 text 中 anchor 子项行 后/前 插入新单位文本（支持 X.Y(Z)/全角括号） */
     _applyLineInsert(originalText, anchorSubNo, newText, position) {
       const lines = originalText.split(/\r?\n/)
       if (!lines.length) return newText
       if (anchorSubNo) {
-        const re = new RegExp(`^${anchorSubNo.replace(/\./g, '\\.')}[\\s　:：、]`)
+        const re = subNoLineRe(anchorSubNo)
         const idx = lines.findIndex((ln) => re.test(ln.trim()))
         if (idx >= 0) {
           const insertAt = position === 'after' ? idx + 1 : idx
@@ -306,10 +329,10 @@ export const useReviewStore = defineStore('review', {
       return lines.join('\n')
     },
 
-    /** 从原 text 中删除指定子项行 */
+    /** 从原 text 中删除指定子项行（支持 X.Y(Z)/全角括号） */
     _applyLineDelete(originalText, subNo) {
       if (!subNo) return originalText
-      const re = new RegExp(`^${subNo.replace(/\./g, '\\.')}[\\s　:：、]`)
+      const re = subNoLineRe(subNo)
       const out = originalText.split(/\r?\n/).filter((ln) => !re.test(ln.trim()))
       return out.join('\n')
     },

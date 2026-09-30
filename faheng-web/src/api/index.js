@@ -42,6 +42,7 @@ api.interceptors.response.use(
  * @param {string} url
  * @param {string} filename
  * @param {object|null} [data] 可选请求体（如导出时携带 TipTap HTML）
+ * @returns {object|null} 响应头里非 ASCII 的 X-* 头（已 decodeURIComponent）
  */
 export async function download(url, filename, data = null) {
   const res = await api.post(url, data, { responseType: 'blob' })
@@ -53,6 +54,11 @@ export async function download(url, filename, data = null) {
   link.click()
   link.remove()
   URL.revokeObjectURL(link.href)
+  // axios 对 blob 响应仍保留 headers；自定义头若非 ASCII 需手动解码
+  const skipped = res.headers?.['x-skipped-actions']
+  return skipped
+    ? { skippedActions: decodeURIComponent(skipped).split(';').filter(Boolean) }
+    : null
 }
 
 export default api

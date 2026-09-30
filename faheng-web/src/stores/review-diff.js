@@ -7,10 +7,59 @@
  * 保留原合同条款的其它段落、行内样式、表格等元素。
  */
 
-/** 子项编号正则：X.Y 或 X.Y.Z，后面必须跟空白/全角空格/冒号/顿号 */
-const SUBITEM_RE = /^\s*(\d+\.\d+(?:\.\d+)?)[\s　:：、]/
+/** 子项编号正则：X.Y / X.Y.Z / X.Y(Z) / X.Y（Z）/ 独立（Z）/(a)，
+ * 全角半角括号、全角数字均支持；编号后可跟分隔符（并入捕获，便于原样拼回）。
+ * 注意：编号后不强制分隔符（真实合同 "（1）乙方…" 常无分隔符）。 */
+const SUBITEM_RE =
+  /^[\s　]*((?:\d+\.\d+(?:\.\d+)?(?:\([0-9０-９a-zA-Z]+\)|（[0-9０-９a-zA-Z]+）)*|(?:\([0-9０-９a-zA-Z]+\)|（[0-9０-９a-zA-Z]+）)+)[\s　:：、]*)/
 
 export { SUBITEM_RE }
+
+/** 编号 token 归一：全角括号→半角、全角数字→半角、去分隔符与空白，用于编号比对 */
+function normNo(s) {
+  return (s || '')
+    .trim()
+    .replace(/[\s　:：、]/g, '')
+    .replace(/（/g, '(')
+    .replace(/）/g, ')')
+    .replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xfee0))
+}
+
+/** X.Y(Z) → X.Y（去括号层级，用于基编号回退匹配） */
+function baseNo(s) {
+  return (s || '').replace(/[(（][0-9０-９a-zA-Z]+[)）]/g, '')
+}
+
+/** 取编号最内层括号内容（'7.2(1)' → '1'；'（a）' → 'a'；无括号 → null） */
+function innermostToken(s) {
+  const m = normNo(s).match(/\(([^()]+)\)$/)
+  return m ? m[1] : null
+}
+
+/** 行的字面编号是否与 subItemNo 一致。
+ * - 完整编号相等（1.1 ↔ 1.1 / 7.2（1）↔ 7.2(1)）；
+ * - 最内层 token 相等（行首只写内层的「（1）乙方…」↔ 7.2(1)）；
+ * - 双方均无内层时按基编号比对；
+ * - 裸基项行（7.2 乙方违约）不算 7.2(1) 的匹配（避免父项误吃子项替换）。 */
+export function lineMatchesNo(line, subItemNo) {
+  const m = SUBITEM_RE.exec(line || '')
+  if (!m) return false
+  const p = normNo(m[1])
+  const n = normNo(subItemNo)
+  if (p === n) return true
+  const pi = innermostToken(m[1])
+  const ni = innermostToken(subItemNo)
+  if (pi && ni) return pi === ni
+  if (!pi && !ni) return p === normNo(baseNo(subItemNo))
+  return false
+}
+
+/** 条款标题行（第X条）—— 替换永不触碰 */
+const CLAUSE_TITLE_RE = /^[\s　]*第[一二三四五六七八九十百零〇\d]+条/
+
+export function isClauseTitleLine(line) {
+  return CLAUSE_TITLE_RE.test((line || '').trim())
+}
 
 /** 移除标点和空白，便于相似度比较 */
 function normalize(s) {
@@ -114,64 +163,66 @@ export function spliceReplacedSegments(clauseHtml, matches) {
   return paragraphs.map((p) => p.raw).join('')
 }
 
-/** 在条款 HTML 中找到子项编号为 X.Y 的 <p> 下标（-1 表示没找到）。
+/** 按子项编号找 <p> 下标（支持 X.Y(Z) / 全角括号 / 独立（Z）行）。
  * 只匹配 <p> 顶层节点的首段纯文本，保证对齐 docx 解析的段落切分。
  */
 export function findParagraphIndexBySubItemNo(clauseHtml, subItemNo) {
   if (!clauseHtml || !subItemNo) return -1
   const paragraphs = splitParagraphs(clauseHtml)
   for (let i = 0; i < paragraphs.length; i++) {
-    const m = SUBITEM_RE.exec(paragraphs[i].text)
-    if (m && m[1] === subItemNo) return i
+    // 优先整段编号匹配；同段多行时按行匹配（w:br → \n）
+    if (lineMatchesNo(paragraphs[i].text.split('\n')[0], subItemNo)) return i
+    for (const ln of paragraphs[i].text.split('\n')) {
+      if (lineMatchesNo(ln, subItemNo)) return i
+    }
   }
   return -1
 }
 
-/** 按子项编号就地替换原 <p> 的 innerText —— 保留 <p ...> 开标签与样式，
- * 仅追加 "replaced" class 让绿框样式生效。找不到子项编号时退化为按相似度兜底。
+/** 按子项编号就地替换目标行的编号后正文 —— 保留 <p ...> 开标签、行首编号
+ * 与 run 级样式；同段多子项（w:br 分行）时仅替换目标行，其余行原样保留。
  *
- * @returns 替换后的 HTML
+ * 定位失败时返回 null（由调用方决定是否兜底/提示），不再自动 Jaccard 乱替换。
+ *
+ * @returns 替换后的 HTML；null = 未定位到目标段
  */
 export function replaceParagraphText(clauseHtml, subItemNo, newText) {
   if (!clauseHtml) return clauseHtml
   const paragraphs = splitParagraphs(clauseHtml)
-  if (!paragraphs.length) {
-    return `<p class="replaced">${escapeHtml(newText || '')}</p>`
-  }
+  if (!paragraphs.length) return null
   let idx = subItemNo ? findParagraphIndexBySubItemNo(clauseHtml, subItemNo) : -1
   if (idx < 0) {
-    // 兜底 1：尝试从 newText 开头抓 X.Y，再走相似度
+    // 兜底：尝试从 newText 开头抓编号，再定位一次
     const m = newText && SUBITEM_RE.exec(newText)
     if (m) idx = findParagraphIndexBySubItemNo(clauseHtml, m[1])
   }
-  if (idx < 0) {
-    // 兜底 2：Jaccard 相似度（保留旧实现行为）
-    const segments = (newText || '')
-      .split(/\r?\n/)
-      .map((s) => s.trim())
-      .filter(Boolean)
-    if (segments.length === 1) {
-      const matches = bestMatchSegments(paragraphs.map((p) => p.text).join('\n'), segments)
-      return spliceReplacedSegments(clauseHtml, matches)
-    }
-    const matches = bestMatchSegments(paragraphs.map((p) => p.text).join('\n'), segments)
-    return spliceReplacedSegments(clauseHtml, matches)
-  }
+  if (idx < 0) return null
 
-  // 命中子项编号：保留 <p ...> 开标签 + run 级 <span> 字体样式，
-  // 只换 innerText；class 追加 "replaced"。
-  // 同时若新文本没有 X.Y 编号，自动把原段落开头的编号补回去，避免丢号。
   const target = paragraphs[idx]
+  const lines = target.text.split('\n')
+  // 目标行：整段无换行 → 第 0 行；多行 → 编号匹配的行（无编号兜底第 0 行）
+  let lineIdx = 0
+  if (lines.length > 1 && subItemNo) {
+    const found = lines.findIndex((ln) => lineMatchesNo(ln, subItemNo))
+    lineIdx = found >= 0 ? found : 0
+  }
+  // 行首字面编号前缀（含尾随分隔符），替换后自动补回，不丢号
+  const line = lines[lineIdx]
+  const pm = SUBITEM_RE.exec(line)
+  const prefix = pm ? pm[0] : ''
+  const body = (newText || '').replace(/^[\s　]+/, '')
+  lines[lineIdx] = prefix && !body.startsWith(prefix.trim()) ? `${prefix}${body}` : body
+
+  // 保留原 <p> 开标签 + 首个 span 的行内样式；class 追加 replaced
   const replacedTag = withReplacedClass(target.openTag)
-  const safeText = ensureSubItemNo(target.text, newText)
   const span = extractFirstSpanWrapper(target.innerHtml || '')
-  const body = `${span.open}${escapeHtml(safeText || '')}${span.close}`
+  const bodyHtml = `${span.open}${escapeHtml(lines.join('\n'))}${span.close}`
   paragraphs[idx] = {
     ...target,
-    raw: `${replacedTag}${body}</p>`,
-    text: (safeText || '').trim(),
+    raw: `${replacedTag}${bodyHtml}</p>`,
+    text: lines.join('\n'),
     openTag: replacedTag,
-    innerHtml: body,
+    innerHtml: bodyHtml,
   }
   return paragraphs.map((p) => p.raw).join('')
 }
@@ -246,6 +297,26 @@ export function insertParagraphText(clauseHtml, anchorSubItemNo, newText, positi
   if (anchorIdx < 0) anchorIdx = position === 'after' ? paragraphs.length - 1 : 0
 
   const anchor = paragraphs[anchorIdx]
+  // 同段多子项（w:br 分行）：把新行插到目标行之后/之前（行内插入），而非另起 <p>
+  const anchorLines = anchor.text.split('\n')
+  if (anchorSubItemNo && anchorLines.length > 1) {
+    const lineIdx = anchorLines.findIndex((ln) => lineMatchesNo(ln, anchorSubItemNo))
+    if (lineIdx >= 0) {
+      const insertAtLine = position === 'after' ? lineIdx + 1 : lineIdx
+      anchorLines.splice(insertAtLine, 0, text)
+      const replacedTag = withReplacedClass(anchor.openTag)
+      const span = extractFirstSpanWrapper(anchor.innerHtml || '')
+      const bodyHtml = `${span.open}${escapeHtml(anchorLines.join('\n'))}${span.close}`
+      paragraphs[anchorIdx] = {
+        ...anchor,
+        raw: `${replacedTag}${bodyHtml}</p>`,
+        text: anchorLines.join('\n'),
+        openTag: replacedTag,
+        innerHtml: bodyHtml,
+      }
+      return paragraphs.map((p) => p.raw).join('')
+    }
+  }
   // 复制 anchor openTag，仅调整 class 标识 inserted
   let newOpen = anchor.openTag
   if (/<p\b/i.test(newOpen)) {
@@ -276,7 +347,7 @@ export function insertParagraphText(clauseHtml, anchorSubItemNo, newText, positi
   return paragraphs.map((p) => p.raw).join('')
 }
 
-/** 删除指定子项 <p>，找不到子项编号时返回原 HTML（不删整条款，避免误删）。 */
+/** 删除指定子项：整段独占时删 <p>；同段多子项（w:br 分行）时仅删目标行。 */
 export function deleteParagraphText(clauseHtml, subItemNo) {
   if (!clauseHtml) return clauseHtml
   if (!subItemNo) return clauseHtml
@@ -284,6 +355,26 @@ export function deleteParagraphText(clauseHtml, subItemNo) {
   if (!paragraphs.length) return clauseHtml
   const idx = findParagraphIndexBySubItemNo(clauseHtml, subItemNo)
   if (idx < 0) return clauseHtml
+  const target = paragraphs[idx]
+  const lines = target.text.split('\n')
+  if (lines.length > 1) {
+    // 同段多子项：只删目标行，其余行保留
+    const lineIdx = lines.findIndex((ln) => lineMatchesNo(ln, subItemNo))
+    if (lineIdx >= 0) {
+      lines.splice(lineIdx, 1)
+      const replacedTag = withReplacedClass(target.openTag)
+      const span = extractFirstSpanWrapper(target.innerHtml || '')
+      const bodyHtml = `${span.open}${escapeHtml(lines.join('\n'))}${span.close}`
+      paragraphs[idx] = {
+        ...target,
+        raw: `${replacedTag}${bodyHtml}</p>`,
+        text: lines.join('\n'),
+        openTag: replacedTag,
+        innerHtml: bodyHtml,
+      }
+      return paragraphs.map((p) => p.raw).join('')
+    }
+  }
   paragraphs.splice(idx, 1)
   return paragraphs.map((p) => p.raw).join('')
 }

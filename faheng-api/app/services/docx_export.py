@@ -282,74 +282,266 @@ def _find_subitem_idx_by_text(clause: Clause, sub_no: str, paras_text: list[str]
     return None
 
 
+# ---------- 最小编辑（fixPlan：采纳后只动编号后的正文，不动编号/样式/标题） ----------
+
+# 行首字面编号前缀：X.Y / X.Y(Z) / X.Y（Z） / X.Y(Z)(a) / 独立（Z）/(a)，
+# 捕获时保留尾随分隔符（空格/全角空格/冒号/顿号）。全角半角括号均支持。
+_LINE_NO_RE = re.compile(
+    r"^[\s　]*("
+    r"\d+\.\d+(?:\.\d+)?(?:\([0-9０-９a-zA-Z]+\)|（[0-9０-９a-zA-Z]+）)*"
+    r"|[（(][0-9０-９a-zA-Z]+[)）]"
+    r")([\s　:：、]*)"
+)
+
+# 条款标题行（第X条）—— replace 永不触碰
+_CLAUSE_TITLE_PREFIX_RE = re.compile(r"^[\s　]*第[一二三四五六七八九十百零〇\d]+条")
+
+
+def _is_title_text(text: str) -> bool:
+    return bool(_CLAUSE_TITLE_PREFIX_RE.match(text or ""))
+
+
+def _split_line_prefix(line: str) -> tuple[str, str]:
+    """拆出行的字面编号前缀（含尾随分隔符）与剩余正文。无编号时前缀为空。"""
+    m = _LINE_NO_RE.match(line or "")
+    if not m:
+        return "", line or ""
+    return m.group(0), (line or "")[m.end():]
+
+
+def _norm_no_token(s: str) -> str:
+    """编号 token 归一：全角括号→半角、全角数字→半角、去空白，用于编号比对。"""
+    out = (s or "").strip()
+    out = out.replace("（", "(").replace("）", ")")
+    out = out.translate(str.maketrans("０１２３４５６７８９", "0123456789"))
+    return out
+
+
+def _line_matches_no(line: str, sub_no: str) -> bool:
+    """行的字面编号前缀是否与 sub_no（或其基编号）一致。"""
+    prefix, _rest = _split_line_prefix(line)
+    if not prefix:
+        return False
+    p = _norm_no_token(prefix)
+    base = _strip_parenthetical_subitem(sub_no)
+    return p == _norm_no_token(sub_no) or (base and p == _norm_no_token(base))
+
+
+def _find_line_idx_by_no(para_text: str, sub_no: str) -> int | None:
+    """在同段多行文本中找编号匹配 sub_no 的行号（0-based）。"""
+    for i, ln in enumerate((para_text or "").split("\n")):
+        if _line_matches_no(ln, sub_no):
+            return i
+    return None
+
+
+def _rpr_at_char(paragraph, offset: int):
+    """返回覆盖第 offset 个字符的 run 的 w:rPr（deepcopy 副本）；无则 None。
+
+    遍历含 hyperlink / fldSimple 内嵌 run，与 paragraph.text 的字符坐标系一致
+    （w:br 计为一个 \\n 字符）。
+    """
+    from docx.text.run import Run
+
+    pos = 0
+    for r_el in paragraph._p.iter(qn("w:r")):
+        text = Run(r_el, None).text or ""
+        if not text:
+            continue
+        if pos <= offset < pos + len(text):
+            rpr = r_el.find(qn("w:rPr"))
+            return deepcopy(rpr) if rpr is not None else None
+        pos += len(text)
+    return None
+
+
+def _write_minimal_runs(paragraph, final_text: str, split_at: int, prefix_rpr, body_rpr) -> None:
+    """清空段落全部 run 后按前缀/正文两段重写（各继承对应字符位置的原样式）。
+
+    - split_at：final_text 中前缀部分的长度（0 表示无前缀，整段用 body 样式）；
+    - prefix_rpr / body_rpr：deepcopy 好的 w:rPr 元素或 None；
+    - Run.text setter 自动把 \\n 转成 <w:br/>，且保留 run 内已有的 rPr；
+    - hyperlink / fldSimple 内的 w:t 一并清空（防旧文本残留）。
+    """
+    from docx.text.run import Run
+
+    p_el = paragraph._p
+    for r_el in list(p_el.findall(qn("w:r"))):
+        p_el.remove(r_el)
+    for hl in p_el.findall(qn("w:hyperlink")):
+        for t in hl.iter(qn("w:t")):
+            t.text = ""
+    for fs in p_el.findall(qn("w:fldSimple")):
+        for t in fs.iter(qn("w:t")):
+            t.text = ""
+    if not final_text:
+        return
+    parts: list[tuple[str, object]] = []
+    if split_at > 0:
+        parts.append((final_text[:split_at], prefix_rpr))
+        parts.append((final_text[split_at:], body_rpr))
+    else:
+        parts.append((final_text, body_rpr if body_rpr is not None else prefix_rpr))
+    for text, rpr in parts:
+        if not text:
+            continue
+        r_el = p_el.makeelement(qn("w:r"), {})
+        if rpr is not None:
+            r_el.append(deepcopy(rpr))
+        p_el.append(r_el)
+        Run(r_el, None).text = text
+
+
+def _replace_paragraph_minimal(paragraph, new_text: str, *, line_idx: int | None = None) -> bool:
+    """最小编辑替换：只替换目标行的编号后正文，保留行首编号与其 run 样式。
+
+    - line_idx=None：整段替换（段落应无 \\n 或无同级子项需要保留）；
+    - line_idx=k：同段多子项时仅替换第 k 行，其余行原样保留；
+    - 前缀样式取行首字符所在 run 的 rPr，正文样式取前缀后首字符所在 run 的 rPr，
+      避免「整段被编号 run 的加粗黑体吞掉」的样式漂移；
+    - 新文本若已自带相同编号前缀则不重复拼接。
+    返回 False 表示 line_idx 越界（调用方可回落整段）。
+    """
+    old_text = paragraph.text
+    lines = old_text.split("\n")
+    if line_idx is None:
+        target_line_idx = 0
+    else:
+        if line_idx < 0 or line_idx >= len(lines):
+            return False
+        target_line_idx = line_idx
+    target = lines[target_line_idx]
+    target_start = sum(len(l) + 1 for l in lines[:target_line_idx])
+    prefix, _rest = _split_line_prefix(target)
+    body = (new_text or "").lstrip()
+    if prefix and body.startswith(prefix.rstrip()):
+        new_line = body
+    elif prefix:
+        new_line = prefix + body
+    else:
+        new_line = body
+    lines[target_line_idx] = new_line
+    final = "\n".join(lines)
+    # 样式锚点：前缀 = 行首字符所在 run；正文 = 前缀后首字符所在 run（缺失回退前缀样式）
+    prefix_rpr = _rpr_at_char(paragraph, target_start)
+    body_rpr = _rpr_at_char(paragraph, target_start + len(prefix))
+    if body_rpr is None:
+        body_rpr = prefix_rpr
+    split_at = target_start + len(prefix) if prefix and new_line.startswith(prefix.rstrip()) else target_start
+    _write_minimal_runs(paragraph, final, split_at, prefix_rpr, body_rpr)
+    return True
+
+
+def _delete_line_in_paragraph(paragraph, line_idx: int) -> bool:
+    """同段多子项：仅删除第 line_idx 行（其余行保留）。单行段落由调用方整段删除。"""
+    lines = paragraph.text.split("\n")
+    if line_idx < 0 or line_idx >= len(lines):
+        return False
+    lines.pop(line_idx)
+    rpr = _rpr_at_char(paragraph, 0)
+    _write_minimal_runs(paragraph, "\n".join(lines), 0, None, rpr)
+    return True
+
+
+def _resolve_subitem(clause: Clause, sub_no: str):
+    """在 clause.subitems 中按 internal_no / sub_item_no 精确找子项。"""
+    for s in clause.subitems:
+        if s.sub_item_no == sub_no or s.internal_no == sub_no:
+            return s
+    return None
+
+
 # ---------- 路径①：DOCX 就地替换 ----------
 
 
-def _apply_action_to_doc(doc, action: EditAction, clause_map: dict) -> None:
-    """把单个 EditAction 落到 docx 段落。
-    replace：替换目标段落文本（保留原样式）。
+def _apply_action_to_doc(doc, action: EditAction, clause_map: dict) -> str | None:
+    """把单个 EditAction 落到 docx 段落（最小编辑语义）。
+
+    replace：只替换目标行编号后的正文；行首编号 run、标题段、同段其它行原样保留。
     insert_*：在锚点段落之后/前插入新段落，复制锚点段落样式。
-    delete：删除目标段落（命中子项）或整个 clause 段区（整条款删除）。
+    delete：删除目标行（同段多子项时仅删该行）或整个 clause 段区。
+
+    返回 None 表示成功；返回字符串为跳过原因（调用方收集后反馈前端）。
     """
     paras = doc.paragraphs
 
     if action.operation == "replace":
         clause = clause_map.get(action.target_clause_id)
         if not clause:
-            return
+            return f"条款 {action.target_clause_id} 不存在"
         idx = _resolve_target_idx(clause, action.target_sub_item_no)
-        if idx is not None and idx >= len(paras):
-            return
         # 回退：段内扫描基编号（如 3.1(3) → 找 3.1 开头的段）
-        if (idx is None or idx >= len(paras)) and action.target_sub_item_no:
+        if action.target_sub_item_no and (idx is None or idx >= len(paras)):
             paras_text = [p.text for p in paras]
             scanned = _find_subitem_idx_by_text(clause, action.target_sub_item_no, paras_text)
             if scanned is not None and scanned < len(paras):
                 idx = scanned
         if idx is None or idx >= len(paras):
-            return
-        text = action.new_text
-        # 自动补回原段落编号前缀：
-        # 1) 子项（display_no 优先 internal_no 回退）：用 clause.subitems 查 display_no
-        # 2) 子项级 X.Y(Z) 也支持：例如 7.2（1）→ 6.1（2）
-        # 3) 整条款（X.Y 基编号）：用 _SUBITEM_RE 从原段落抓 X.Y
-        display_prefix = ""
+            return f"条款 {clause.clause_id} 未能定位到目标段落"
+
+        target_p = paras[idx]
+        # 子项级：优先用行级定位（同段多子项只动目标行）
         if action.target_sub_item_no:
-            for s in clause.subitems:
-                if s.sub_item_no == action.target_sub_item_no or s.internal_no == action.target_sub_item_no:
-                    display_prefix = s.display_no
-                    break
-        if not display_prefix:
-            orig_match = _SUBITEM_RE.match(paras[idx].text or "")
-            if orig_match:
-                display_prefix = orig_match.group(0).rstrip()
-        if display_prefix and not text.lstrip().startswith(display_prefix):
-            text = f"{display_prefix}{text.lstrip()}"
-        _replace_paragraph_text(paras[idx], text)
-        return
+            sub = _resolve_subitem(clause, action.target_sub_item_no)
+            para_text = target_p.text
+            line_idx = None
+            if sub is not None and "\n" in para_text:
+                line_idx = sub.line_in_paragraph
+                # 行号与编号不匹配时改为按编号找行（子项行号失准的自愈）
+                if line_idx is None or line_idx >= len(para_text.split("\n")) or not _line_matches_no(
+                    para_text.split("\n")[line_idx], action.target_sub_item_no
+                ):
+                    found = _find_line_idx_by_no(para_text, action.target_sub_item_no)
+                    line_idx = found if found is not None else line_idx
+            ok = _replace_paragraph_minimal(target_p, action.new_text, line_idx=line_idx)
+            if not ok:
+                _replace_paragraph_minimal(target_p, action.new_text, line_idx=None)
+            return None
+
+        # 整条款级：绝不替换标题段 —— 标题段是第X条行时跳到下一段或按首行处理
+        if _is_title_text(target_p.text):
+            if clause.end_idx > clause.start_idx and idx + 1 <= clause.end_idx and idx + 1 < len(paras):
+                target_p = paras[idx + 1]
+            elif "\n" in target_p.text:
+                # 标题与正文同段：只替换第 1 行之后的行，第 0 行（标题行）保留
+                ok = _replace_paragraph_minimal(target_p, action.new_text, line_idx=1)
+                if not ok:
+                    return f"条款 {clause.clause_id} 仅有标题行，跳过整条款替换"
+                return None
+            else:
+                return f"条款 {clause.clause_id} 仅有标题段，跳过整条款替换"
+        _replace_paragraph_minimal(target_p, action.new_text, line_idx=None)
+        return None
 
     if action.operation == "delete":
         clause = clause_map.get(action.target_clause_id)
         if not clause:
-            return
+            return f"条款 {action.target_clause_id} 不存在"
         if action.target_sub_item_no:
             idx = _resolve_target_idx(clause, action.target_sub_item_no)
-            if idx is None:
-                return
+            if idx is None or idx >= len(paras):
+                return f"条款 {clause.clause_id} 子项 {action.target_sub_item_no} 未能定位"
+            target_p = paras[idx]
+            if "\n" in target_p.text:
+                sub = _resolve_subitem(clause, action.target_sub_item_no)
+                line_idx = sub.line_in_paragraph if sub is not None else None
+                if line_idx is None:
+                    line_idx = _find_line_idx_by_no(target_p.text, action.target_sub_item_no)
+                if line_idx is not None and _delete_line_in_paragraph(target_p, line_idx):
+                    return None
             _delete_paragraphs(paras, [idx])
-            return
+            return None
         # 整条款删除：清空 clause 区间内所有段落文本（保留段落本身以保版式）
-        # 真正的整条款删除风险由 _postprocess 拦截，几乎不会到这里；保留兜底
         _clear_paragraphs(paras, clause.start_idx, clause.end_idx)
-        return
+        return None
 
     if action.operation in ("insert_after", "insert_before"):
         clause = clause_map.get(action.anchor_clause_id or action.target_clause_id)
         if not clause:
-            return
+            return f"锚点条款 {action.anchor_clause_id or action.target_clause_id} 不存在"
         anchor_idx = _resolve_target_idx(clause, action.anchor_sub_item_no)
         if anchor_idx is None:
-            return
+            return f"锚点条款 {clause.clause_id} 未能定位"
         # 多行新内容（如"第X条 标题\nX.1 ...\nX.2 ..."）拆成多段插入，每段按角色套样式。
         for offset, line in enumerate(_split_insert_text(action.new_text)):
             insert_pos = anchor_idx + offset if action.operation == "insert_after" else anchor_idx - 1 - offset
@@ -358,7 +550,8 @@ def _apply_action_to_doc(doc, action: EditAction, clause_map: dict) -> None:
                 _insert_paragraph_before_idx(paras, anchor_idx - offset, line)
             else:
                 _insert_paragraph_after(paras, insert_pos, line)
-        return
+        return None
+    return f"未知操作 {action.operation}"
 
 
 def _resolve_target_idx(clause: Clause, sub_no: str) -> int | None:
@@ -610,19 +803,23 @@ def _remove_first_line_indent_from(p_el) -> None:
         pPr.remove(ind)
 
 
-def _replace_clause_span(doc, session: ReviewSession) -> None:
+def _replace_clause_span(doc, session: ReviewSession) -> list[str]:
     """把决策后的精确编辑指令写回 docx 原件（按 EditAction 排序，倒序应用）。
 
-    取代旧的"按 Jaccard 兜底替换整段"实现：
-    - replace 命中子项编号时按段落下标精确替换；
+    - replace 命中子项编号时按行级最小编辑替换（保留编号 run 与同段其它行）；
     - insert_* 在锚点段落后/前插入；
     - delete 删除目标段落（命中子项时精确，命中整条款时清空区间）；
     sort_key 已按文档绝对位置升序，应用层倒序避免下标漂移。
+    返回被跳过动作的原因列表（供 API 层反馈前端）。
     """
     clause_map = {c.clause_id: c for c in session.clauses}
     actions = _build_edit_plan(session)
+    skipped: list[str] = []
     for action in reversed(actions):
-        _apply_action_to_doc(doc, action, clause_map)
+        reason = _apply_action_to_doc(doc, action, clause_map)
+        if reason:
+            skipped.append(reason)
+    return skipped
 
 
 def export_docx_inplace(session: ReviewSession) -> io.BytesIO:

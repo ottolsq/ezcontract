@@ -555,14 +555,38 @@ def apply_decisions(session: ReviewSession, decisions: list[Decision]) -> int:
     return len(session.decisions)
 
 
-async def export_review_docx(session: ReviewSession, *, track_changes: bool = False) -> io.BytesIO:
+async def export_review_docx(
+    session: ReviewSession,
+    *,
+    track_changes: bool = False,
+) -> tuple[io.BytesIO, list[str]]:
     """导出决策回填后的最终合同 docx（内存 BytesIO，无落盘）。
 
-    默认走就地替换（直接给修改后正确的文档，无修订标记）；调用方可显式
+    默认走就地替换（直接给用户修改后正确的合同，无修订标记）；调用方可显式
     传 track_changes=True 以打开 Track Changes 评审记录模式。
+    返回 (docx字节流, 被跳过动作的原因列表)。
     """
     if not session.decisions:
         raise HTTPException(400, "尚无任何决策记录，请先在风险清单中处理至少一项")
-    buf = await asyncio.to_thread(export_final_docx, session, track_changes=track_changes)
+    from app.services import docx_export
+
+    skipped: list[str] = []
+    if session.file_type != "docx" or track_changes:
+        buf = await asyncio.to_thread(
+            docx_export.export_final_docx, session, track_changes=track_changes
+        )
+    else:
+        # 干净版就地替换：收集跳过原因（编号无法定位/仅标题段），反馈给前端
+        from docx import Document as _Docx
+
+        def _inplace():
+            doc = _Docx(io.BytesIO(session.upload_bytes))
+            skipped.extend(docx_export._replace_clause_span(doc, session))
+            out = io.BytesIO()
+            doc.save(out)
+            out.seek(0)
+            return out
+
+        buf = await asyncio.to_thread(_inplace)
     buf.seek(0)
-    return buf
+    return buf, skipped

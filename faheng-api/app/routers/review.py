@@ -177,19 +177,34 @@ async def export_contract(review_id: str, track_changes: bool = False):
     """导出最终合同；默认走干净版（直接给用户修改后正确的合同，无修订标记）。
 
     ?track_changes=true 显式打开评审记录模式（带 w:ins/w:del 修订痕迹）。
+    响应头 X-Skipped-Actions 携带未落地的编辑动作原因（JSON 数组），
+    前端据此提示"某条建议未能定位到子项"。
     """
+    import json as _json
+
     session = get_review(review_id)
     if session is None:
         raise HTTPException(404, "审查任务不存在")
     if session.status != "completed":
         raise HTTPException(400, "审查尚未完成")
-    buf = await review_service.export_review_docx(session, track_changes=track_changes)
+    buf, skipped = await review_service.export_review_docx(
+        session, track_changes=track_changes
+    )
     stem = session.filename.rsplit(".", 1)[0]
     suffix = "_修订版" if track_changes else "_修改版"
+    headers = {
+        "Content-Disposition": _url_quote_filename(f"{stem}{suffix}.docx"),
+    }
+    if skipped:
+        # 中文原因含非 ASCII，HTTP 头只允许 ASCII → RFC 2047 百分号编码，前端 decodeURIComponent
+        from urllib.parse import quote as _quote
+
+        headers["X-Skipped-Actions"] = _quote(";".join(skipped))
+        headers["X-Skipped-Count"] = str(len(skipped))
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": _url_quote_filename(f"{stem}{suffix}.docx")},
+        headers=headers,
     )
 
 

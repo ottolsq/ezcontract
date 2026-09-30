@@ -293,6 +293,12 @@ _LINE_NO_RE = re.compile(
     r")([\s　:：、]*)"
 )
 
+# 仅基编号（X.Y 开头，不含独立（Z）行）—— 用于跨段边界判断：
+# 嵌套（Z）行是上一子项的内容，不是新子项的开始。
+_BASE_NO_LINE_RE = re.compile(
+    r"^[\s　]*\d+\.\d+(?:\.\d+)?(?:\([0-9０-９a-zA-Z]+\)|（[0-9０-９a-zA-Z]+）)*[\s　:：、]"
+)
+
 # 条款标题行（第X条）—— replace 永不触碰
 _CLAUSE_TITLE_PREFIX_RE = re.compile(r"^[\s　]*第[一二三四五六七八九十百零〇\d]+条")
 
@@ -317,14 +323,34 @@ def _norm_no_token(s: str) -> str:
     return out
 
 
+def _innermost_token(no_token: str) -> str | None:
+    """取编号最内层括号内容（'7.2(1)' → '1'；无括号 → None）。"""
+    m = re.search(r"[（(]([0-9０-９a-zA-Z]+)[)）]\s*$", no_token or "")
+    return m.group(1) if m else None
+
+
 def _line_matches_no(line: str, sub_no: str) -> bool:
-    """行的字面编号前缀是否与 sub_no（或其基编号）一致。"""
+    """行的字面编号前缀是否与 sub_no 一致。
+
+    - 完整编号相等（'1.1' ↔ '1.1'）；
+    - 最内层 token 相等（行首只写内层的「（1）…」↔ '7.2(1)'）；
+    - 双方均无内层时按基编号比对；裸基项行（'7.2 乙方违约'）不算 '7.2(1)'。
+    """
     prefix, _rest = _split_line_prefix(line)
     if not prefix:
         return False
     p = _norm_no_token(prefix)
-    base = _strip_parenthetical_subitem(sub_no)
-    return p == _norm_no_token(sub_no) or (base and p == _norm_no_token(base))
+    n = _norm_no_token(sub_no)
+    if p == n:
+        return True
+    pi = _innermost_token(prefix)
+    ni = _innermost_token(sub_no)
+    if pi and ni:
+        return pi == ni
+    if not pi and not ni:
+        base = _strip_parenthetical_subitem(sub_no)
+        return bool(base) and p == _norm_no_token(base)
+    return False
 
 
 def _find_line_idx_by_no(para_text: str, sub_no: str) -> int | None:
@@ -493,6 +519,12 @@ def _apply_action_to_doc(doc, action: EditAction, clause_map: dict) -> str | Non
                 ):
                     found = _find_line_idx_by_no(para_text, action.target_sub_item_no)
                     line_idx = found if found is not None else line_idx
+            # 编号+短名称行是子标题（如「3.1 租金标准」，内容在下方（1）（2）行）：
+            # 替换落到其下第一条内容行，子标题行原样保留
+            if _is_subitem_heading_line(target_p, line_idx, action.target_sub_item_no, clause, paras):
+                shifted = _shift_to_first_content_below(clause, idx, paras, action.target_sub_item_no)
+                if shifted is not None:
+                    target_p, line_idx = shifted
             ok = _replace_paragraph_minimal(target_p, action.new_text, line_idx=line_idx)
             if not ok:
                 _replace_paragraph_minimal(target_p, action.new_text, line_idx=None)
@@ -539,9 +571,28 @@ def _apply_action_to_doc(doc, action: EditAction, clause_map: dict) -> str | Non
         clause = clause_map.get(action.anchor_clause_id or action.target_clause_id)
         if not clause:
             return f"锚点条款 {action.anchor_clause_id or action.target_clause_id} 不存在"
-        anchor_idx = _resolve_target_idx(clause, action.anchor_sub_item_no)
+        # 编号驱动插入：suggestion 首行自带同级编号（如「9.4 …」）时，
+        # 在同级子项中找编号前驱（9.4 → 9.3 → 9.2…），插到前驱之后。
+        anchor_idx = _resolve_insert_anchor_idx(clause, action, paras)
         if anchor_idx is None:
             return f"锚点条款 {clause.clause_id} 未能定位"
+        # 同段多子项（w:br 分行）：新行插入到锚点段的目标行后/前（行内插入，
+        # 与原版式一致），而非另起新段。
+        anchor_sub = action.anchor_sub_item_no
+        if anchor_sub and "\n" in (paras[anchor_idx].text or ""):
+            lines = (paras[anchor_idx].text or "").split("\n")
+            line_idx = _find_line_idx_by_no("\n".join(lines), anchor_sub)
+            if line_idx is None and anchor_idx + 1 < len(paras) and not _BASE_NO_LINE_RE.match(
+                (paras[anchor_idx + 1].text or "").split("\n")[0].strip()
+            ) and not _is_title_text((paras[anchor_idx + 1].text or "")):
+                # 锚点编号不在本段（如 7.2 后跟（1）（2）（3）独立段）：插到锚点段之后即可
+                line_idx = None
+            if line_idx is not None:
+                insert_line_at = line_idx + 1 if action.operation == "insert_after" else line_idx
+                lines.insert(insert_line_at, action.new_text.strip())
+                rpr = _rpr_at_char(paras[anchor_idx], 0)
+                _write_minimal_runs(paras[anchor_idx], "\n".join(lines), 0, None, rpr)
+                return None
         # 多行新内容（如"第X条 标题\nX.1 ...\nX.2 ..."）拆成多段插入，每段按角色套样式。
         for offset, line in enumerate(_split_insert_text(action.new_text)):
             insert_pos = anchor_idx + offset if action.operation == "insert_after" else anchor_idx - 1 - offset
@@ -552,6 +603,158 @@ def _apply_action_to_doc(doc, action: EditAction, clause_map: dict) -> str | Non
                 _insert_paragraph_after(paras, insert_pos, line)
         return None
     return f"未知操作 {action.operation}"
+
+
+def _resolve_insert_anchor_idx(clause: Clause, action: EditAction, paras: list) -> int | None:
+    """insert_* 的锚点定位（三级策略）：
+
+    1. suggestion 首行自带同级编号（如「9.4 …」）→ 在 clause.subitems 同级里找
+       编号前驱（9.4 → 9.3 → 9.2…），锚定前驱所在段/行；找不到更小编号时
+       锚定首个同级子项之前（insert_before 语义交给调用方位置参数）。
+    2. anchor_sub_item_no 精确命中 → 锚定该子项段。
+    3. 兜底：anchor 为空时锚定 clause 内最后一个子项行（而非标题段），
+       无子项时锚定标题段之后的第一个正文段。
+    """
+    # 策略 1：编号驱动
+    first_line = (action.new_text or "").strip().splitlines()[0] if action.new_text else ""
+    m = _LINE_NO_RE.match(first_line)
+    if m:
+        new_no = _norm_no_token(m.group(1))
+        # 解析 (X, Y) 序数用于同级比较
+        xy = _parse_xy(new_no)
+        if xy is not None:
+            same_base = [
+                s for s in clause.subitems
+                if _parse_xy(_norm_no_token(s.internal_no)) is not None
+                and _parse_xy(_norm_no_token(s.internal_no))[0] == xy[0]
+            ]
+            preds = [
+                s for s in same_base
+                if _parse_xy(_norm_no_token(s.internal_no))[1] < xy[1]
+            ]
+            if preds:
+                # 最近前驱（Y 最大且 < 新 Y）
+                pred = max(preds, key=lambda s: _parse_xy(_norm_no_token(s.internal_no))[1])
+                return _subitem_end_idx(clause, pred, paras)
+            if same_base:
+                # 无前驱 → 插在首个同级子项之前：返回首个子项段（调用方 before/after 决定位置）
+                return same_base[0].start_idx
+
+    # 策略 2：anchor_sub_item_no 精确命中
+    if action.anchor_sub_item_no:
+        idx = _resolve_target_idx(clause, action.anchor_sub_item_no)
+        if idx is not None:
+            return idx
+        return None
+
+    # 策略 3：锚定最后一个子项行（而非标题段）
+    if clause.subitems:
+        last_sub = max(
+            clause.subitems,
+            key=lambda s: (s.start_idx, s.line_in_paragraph),
+        )
+        return last_sub.start_idx
+    # 无子项：标题段之后第一个正文段
+    if clause.end_idx > clause.start_idx and clause.start_idx + 1 < len(paras):
+        return clause.start_idx + 1
+    return clause.start_idx
+
+
+def _parse_xy(no_token: str) -> tuple[int, int] | None:
+    """'9.4' / '9.4(2)' → (9, 4)；解析失败返回 None。"""
+    m = re.match(r"^(\d+)\.(\d+)", no_token or "")
+    if not m:
+        return None
+    return int(m.group(1)), int(m.group(2))
+
+
+def _subitem_end_idx(clause: Clause, sub, paras: list) -> int:
+    """返回子项「内容结束」的段落下标：取该子项段与其后续同段/无编号正文段，
+    直到遇到下一个子项编号段为止。用于 insert_after 锚定到子项末尾。"""
+    idx = sub.start_idx
+    for i in range(sub.start_idx + 1, clause.end_idx + 1):
+        if i >= len(paras):
+            break
+        text = paras[i].text or ""
+        first_line = text.split("\n")[0]
+        if _LINE_NO_RE.match(first_line) or _is_title_text(first_line):
+            break
+        idx = i
+    return idx
+
+
+def _is_subitem_heading_line(
+    target_p, line_idx: int | None, sub_no: str, clause: Clause, paras: list
+) -> bool:
+    """判断目标行是否「编号 + 短名称」子标题行（如「3.1 租金标准」）。
+
+    判定：行有编号前缀，编号后文本非空、≤ 12 字、以名词短语结尾（无句号/分号），
+    且其下方存在内容行（同段后续行或后续段以（Z）嵌套编号开头）。
+    """
+    text = target_p.text or ""
+    lines = text.split("\n")
+    li = line_idx if line_idx is not None else 0
+    if li >= len(lines):
+        return False
+    line = lines[li].strip()
+    m = _LINE_NO_RE.match(line)
+    if not m:
+        return False
+    rest = line[m.end():].strip()
+    if not rest or len(rest) > 12:
+        return False
+    if any(ch in rest for ch in "。；;，,"):
+        return False
+    # 下方必须有内容行：同段后续行，或后续段的（Z）/正文
+    if li + 1 < len(lines) and lines[li + 1].strip():
+        return True
+    sub = _resolve_subitem(clause, sub_no)
+    start = sub.start_idx if sub is not None else None
+    if start is None:
+        return False
+    for i in range(start + 1, clause.end_idx + 1):
+        if i >= len(paras):
+            break
+        t = (paras[i].text or "").split("\n")[0].strip()
+        if not t:
+            continue
+        # 下一段也是同级/更深层编号 → 是子标题；纯正文也算内容
+        return True
+    return False
+
+
+def _shift_to_first_content_below(
+    clause: Clause, idx: int, paras: list, sub_no: str
+) -> tuple | None:
+    """把替换目标从子标题行移到其下第一条内容行。
+
+    返回 (target_p, line_idx)；无内容行时返回 None（调用方保持原子标题行替换）。
+    边界判断：同段后续行、跨段的嵌套（Z）行 / 纯正文段都算内容；
+    只有「X.Y 基编号开头的新段」或「第X条标题段」才是边界。
+    """
+    target_p = paras[idx]
+    lines = (target_p.text or "").split("\n")
+    sub = _resolve_subitem(clause, sub_no)
+    # 同段：子标题行下面的第一条非空行
+    for li in range(1, len(lines)):
+        if lines[li].strip():
+            return target_p, li
+    # 跨段：子项编号段之后、下一个基编号段/标题段之前的第一个内容段
+    start = sub.start_idx if sub is not None else idx
+    for i in range(start + 1, clause.end_idx + 1):
+        if i >= len(paras):
+            break
+        text = paras[i].text or ""
+        if not text.strip():
+            continue
+        first_line = text.split("\n")[0].strip()
+        if _BASE_NO_LINE_RE.match(first_line) or _is_title_text(first_line):
+            break
+        # 该段首行即内容（（Z）嵌套行 / 纯正文）
+        for li, ln in enumerate(text.split("\n")):
+            if ln.strip():
+                return paras[i], li
+    return None
 
 
 def _resolve_target_idx(clause: Clause, sub_no: str) -> int | None:

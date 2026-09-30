@@ -45,10 +45,17 @@ def _clauses() -> list[Clause]:
 
 class TestNormalizeParens(unittest.TestCase):
     def test_halfwidth_paren_to_fullwidth(self):
-        # 半角 (1) → 全角 （１）；同时数字也被转为全角（与中文合同版式一致）
+        # 半角 (1) → 全角 （1）；数字保持半角（用户要求 01234 不转全角）
         self.assertEqual(
             _normalize_parens("(1) 押金抵扣条款；原条款 (3) 规定押金可全额抵扣。"),
-            "（１） 押金抵扣条款；原条款 （３） 规定押金可全额抵扣。",
+            "（1） 押金抵扣条款；原条款 （3） 规定押金可全额抵扣。",
+        )
+
+    def test_body_digits_stay_halfwidth(self):
+        # 正文金额/日期/百分比数字保持半角，不转全角
+        self.assertEqual(
+            _normalize_parens("押金为1000元，比例5%，第12个月付3000元。"),
+            "押金为1000元，比例5%，第12个月付3000元。",
         )
 
     def test_no_paren_unchanged(self):
@@ -68,7 +75,7 @@ class TestNormalizeParens(unittest.TestCase):
 
 class TestPostprocess(unittest.TestCase):
     def test_postprocess_normalizes_halfwidth_parens_in_suggestion(self):
-        """replace：suggestion 中的 (1)/(2) → （１）/（２）（数字也全角）。"""
+        """replace：suggestion 中的 (1)/(2) → （1）/（2）（数字保持半角）。"""
         risks = [
             RiskItem(
                 risk_id="R1",
@@ -84,11 +91,11 @@ class TestPostprocess(unittest.TestCase):
         ]
         out, _ = _postprocess(risks, _clauses(), salvaged=False)
         self.assertEqual(len(out), 1)
-        self.assertIn("（２）", out[0].suggestion)
+        self.assertIn("（2）", out[0].suggestion)
         self.assertNotIn("(2)", out[0].suggestion)
 
     def test_postprocess_normalizes_parens_in_insert(self):
-        """insert_after：suggestion 含 (1) → （１）。"""
+        """insert_after：suggestion 含 (1) → （1）（数字保持半角）。"""
         risks = [
             RiskItem(
                 risk_id="R2",
@@ -105,7 +112,7 @@ class TestPostprocess(unittest.TestCase):
         ]
         out, _ = _postprocess(risks, _clauses(), salvaged=False)
         self.assertEqual(len(out), 1)
-        self.assertIn("（１）", out[0].suggestion)
+        self.assertIn("（1）", out[0].suggestion)
 
     def test_postprocess_sub_item_no_from_issue_fallback(self):
         """replace：sub_item_no 为空时，从 issue 字段兜底提取。"""

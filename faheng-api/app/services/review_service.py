@@ -37,18 +37,12 @@ _CHINESE_DIGIT_PAREN_MAP = str.maketrans("0123456789", "０１２３４５６７
 def _normalize_parens(text: str) -> str:
     """把中文合同里出现的半角数字括号 (1)/(2)/(3) 替换为全角（1）/（2）/（3）。
 
-    只针对前后是中文或出现在条款正文里的数字括号生效；为简化处理，匹配整段里
-    所有 ASCII 数字括号并替换。Word/WPS 默认对半角括号后的中文换行效果不一致，
-    改成全角可以避免版式抖动。
-
-    注意：会一并把 ASCII 数字（0-9）替换为全角数字（０-９），便于 LLM 在中文合同
-    里直接使用纯文本 ASCII 数字时被规整。但 X.Y 子项编号（包含 .）会因 "." 不在
-    映射表里而保持原样，X.Y 段结构不变。
+    只做括号全角化；正文里的 ASCII 数字（金额/日期/百分比等）保持半角不变，
+    避免导出文档出现「１０００元」「５%」这类全角数字（用户反馈要求 01234 半角）。
     """
     if not text:
         return text
-    text = _PAREN_DIGIT_RE.sub(lambda m: f"（{m.group(1)}）", text)
-    return text.translate(_CHINESE_DIGIT_PAREN_MAP)
+    return _PAREN_DIGIT_RE.sub(lambda m: f"（{m.group(1)}）", text)
 
 
 def _normalize_subitem_no_digits(text: str) -> str:

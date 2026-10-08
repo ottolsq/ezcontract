@@ -87,7 +87,7 @@ onMounted(() => store.fetchContracts())
 
 <style scoped>
 .compliance-page {
-  align-items: stretch;
+  align-items: center;
   overflow-y: auto;
 }
 

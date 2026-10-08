@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { useDraftStore } from '../stores/draft'
 import RichEditor from '../components/draft/RichEditor.vue'
+import LoadingPanel from '../components/draft/LoadingPanel.vue'
 
 const store = useDraftStore()
 const router = useRouter()
@@ -63,8 +64,11 @@ function onFinish() {
       </div>
     </div>
 
+    <!-- 加载状态：生成或修订中 -->
+    <LoadingPanel v-if="store.loading || store.revising" />
+
     <!-- 表单 -->
-    <el-card v-if="!store.draftId" class="form-card" shadow="never" v-loading="store.loading">
+    <el-card v-else-if="!store.draftId" class="form-card" shadow="never">
       <template #header>输入起草需求</template>
       <el-form label-width="90px">
         <el-form-item label="关键词" required>
@@ -98,7 +102,7 @@ function onFinish() {
           />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" :loading="store.loading" @click="onGenerate">
+          <el-button type="primary" @click="onGenerate">
             生成合同模板
           </el-button>
         </el-form-item>
@@ -147,7 +151,7 @@ function onFinish() {
             placeholder="如：把付款方式改为按验收节点分期付款，并增加数据导出协助条款"
             @keyup.enter="onRevise"
           />
-          <el-button type="primary" :loading="store.revising" @click="onRevise">
+          <el-button type="primary" @click="onRevise">
             AI 修订
           </el-button>
         </div>

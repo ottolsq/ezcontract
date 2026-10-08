@@ -1,11 +1,13 @@
 <script setup>
 import { useComplianceStore } from '../../stores/compliance'
+import LoadingIndicator from '../LoadingIndicator.vue'
 
 const store = useComplianceStore()
 </script>
 
 <template>
-  <div class="extracting" v-loading="true" element-loading-background="transparent">
+  <div class="extracting">
+    <!-- 失败状态 -->
     <template v-if="store.status === 'failed'">
       <div class="fail-icon">✕</div>
       <h2>提取失败</h2>
@@ -15,30 +17,24 @@ const store = useComplianceStore()
         <el-button type="primary" @click="store.retryExtract()">重试提取</el-button>
       </div>
     </template>
-    <template v-else>
-      <el-progress type="circle" :percentage="50" status="warning" :show-text="false" />
-      <h2>正在提取履约节点</h2>
-      <p class="sub">{{ store.progressStage || 'AI 正在识别合同中的时间节点…' }}</p>
-    </template>
+
+    <!-- 加载状态：使用统一指示器 -->
+    <LoadingIndicator
+      v-else
+      type="compliance"
+      :percentage="50"
+      :stage="store.progressStage"
+      title="正在提取履约节点"
+      :subtitle="store.contract?.filename"
+    />
   </div>
 </template>
 
 <style scoped>
 .extracting {
-  max-width: 480px;
+  width: 480px;
   margin: 60px auto;
   text-align: center;
-  padding: 20px 0;
-}
-
-h2 {
-  margin: 18px 0 8px;
-  font-size: 20px;
-}
-
-.sub {
-  color: #66758a;
-  margin-bottom: 24px;
 }
 
 .fail-icon {
@@ -50,6 +46,16 @@ h2 {
   color: #e74c3c;
   font-size: 30px;
   line-height: 64px;
+}
+
+h2 {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+
+.sub {
+  color: #66758a;
+  margin-bottom: 24px;
 }
 
 .actions {

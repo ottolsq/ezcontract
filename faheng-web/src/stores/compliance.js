@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import api from '../api'
 import { ElMessage } from 'element-plus'
+import { useNotificationsStore } from './notifications'
 
 export const useComplianceStore = defineStore('compliance', {
   state: () => ({
@@ -38,7 +39,7 @@ export const useComplianceStore = defineStore('compliance', {
       }
     },
     /** 顶部统计条 */
-    stats(s) {
+    stats() {
       const list = this.milestones
       return {
         total: list.length,
@@ -161,6 +162,9 @@ export const useComplianceStore = defineStore('compliance', {
         this.currentId = ''
       }
       await this.fetchContracts()
+      // 刷新通知列表，移除已删除合同的相关提醒
+      const notificationsStore = useNotificationsStore()
+      await notificationsStore.fetch()
       ElMessage.success('已删除合同及其履约数据')
     },
 

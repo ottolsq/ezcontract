@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import api from '../api'
+import { ElMessage } from 'element-plus'
 import {
   bestMatchSegments,
   spliceReplacedSegments,
@@ -103,20 +104,11 @@ export const useReviewStore = defineStore('review', {
       this.phase = 'uploaded'
     },
 
-    async loadSample() {
-      const { data } = await api.post('/review/sample')
-      this.reset()
-      this.reviewId = data.review_id
-      this.filename = data.filename
-      this.fileType = data.file_type
-      this.clauses = data.clauses
-      this.preambleHtml = data.preamble_html || ''
-      this.tailHtml = data.tail_html || ''
-      this._snapshotOriginalClauses()
-      this.phase = 'uploaded'
-    },
-
     async startReview() {
+      if (!this.reviewId) {
+        ElMessage.error('请先上传合同')
+        return
+      }
       await api.post(`/review/${this.reviewId}/start`)
       this.phase = 'processing'
       this.status = 'processing'
@@ -126,6 +118,7 @@ export const useReviewStore = defineStore('review', {
 
     poll() {
       clearTimeout(this.pollingTimer)
+      if (!this.reviewId) return
       this.pollingTimer = setTimeout(async () => {
         try {
           const { data } = await api.get(`/review/${this.reviewId}/status`)
@@ -162,6 +155,7 @@ export const useReviewStore = defineStore('review', {
       this.filters.status = 'pending'
       this.currentRiskId = this.visibleRisks[0]?.risk_id || ''
       this.phase = 'workspace'
+      ElMessage.success('合同审查完成')
     },
 
     /** 把当前 clauses 备份为原始版本（采纳/撤销都基于此重建） */

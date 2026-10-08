@@ -31,17 +31,6 @@ async function beforeUpload(file) {
   return false // 阻止 el-upload 自动上传
 }
 
-async function onSample() {
-  if (uploading.value) return
-  uploading.value = true
-  try {
-    await store.loadSample()
-    ElMessage.success(`已载入测试合同，识别 ${store.clauses.length} 条条款`)
-  } finally {
-    uploading.value = false
-  }
-}
-
 async function startReview() {
   if (isStarting.value) return
   isStarting.value = true
@@ -65,7 +54,6 @@ async function startReview() {
         <div class="el-upload__tip">支持 DOCX / PDF，单份不超过 20MB</div>
       </template>
     </el-upload>
-    <el-button class="sample-btn" @click="onSample">载入测试合同（乙方埋坑版）</el-button>
   </div>
 
   <!-- 已上传待开始视图 -->
@@ -99,10 +87,6 @@ h2 {
 .upload-icon {
   font-size: 48px;
   color: #2459a9;
-}
-
-.sample-btn {
-  margin-top: 16px;
 }
 
 .ok-icon {

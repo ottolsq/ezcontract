@@ -113,6 +113,7 @@ export const useComplianceStore = defineStore('compliance', {
           } else if (data.status === 'completed') {
             await this.fetchContracts()
             await this.fetchDetail(this.currentId)
+            ElMessage.success('履约节点提取完成')
           } else if (data.status === 'failed') {
             // 停在 processing 面板显示错误与重试
           }

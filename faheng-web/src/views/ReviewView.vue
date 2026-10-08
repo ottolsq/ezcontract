@@ -59,7 +59,7 @@ async function exportReport() {
 
 /** 完成本次审查：清空 store + 跳首页 */
 function onFinish() {
-  store.$reset()
+  store.reset()
   router.push('/')
 }
 </script>

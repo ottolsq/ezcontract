@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import api from '../api'
+import { ElMessage } from 'element-plus'
 
 export const useDraftStore = defineStore('draft', {
   state: () => ({
@@ -23,6 +24,7 @@ export const useDraftStore = defineStore('draft', {
         this.markdown = data.markdown
         this.keywords = form.keywords
         this.history = data.history || []
+        ElMessage.success('合同模板生成完成')
       } finally {
         this.loading = false
       }
@@ -37,6 +39,7 @@ export const useDraftStore = defineStore('draft', {
         this.title = data.title
         this.markdown = data.markdown
         this.history = data.history || []
+        ElMessage.success('合同修订完成')
       } finally {
         this.revising = false
       }

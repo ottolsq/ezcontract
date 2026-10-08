@@ -6,6 +6,7 @@ import { useReviewStore } from '../../stores/review'
 
 const store = useReviewStore()
 const uploading = ref(false)
+const isStarting = ref(false)
 
 async function beforeUpload(file) {
   const ok = /\.(docx|pdf)$/i.test(file.name)
@@ -17,6 +18,7 @@ async function beforeUpload(file) {
     ElMessage.error('文件超过 20MB')
     return false
   }
+  if (uploading.value) return false
   uploading.value = true
   try {
     await store.uploadFile(file)
@@ -30,12 +32,23 @@ async function beforeUpload(file) {
 }
 
 async function onSample() {
+  if (uploading.value) return
   uploading.value = true
   try {
     await store.loadSample()
     ElMessage.success(`已载入测试合同，识别 ${store.clauses.length} 条条款`)
   } finally {
     uploading.value = false
+  }
+}
+
+async function startReview() {
+  if (isStarting.value) return
+  isStarting.value = true
+  try {
+    await store.startReview()
+  } finally {
+    isStarting.value = false
   }
 }
 </script>
@@ -62,7 +75,7 @@ async function onSample() {
     <p class="sub">{{ store.filename }} · 已切分 {{ store.clauses.length }} 条条款</p>
     <div class="actions">
       <el-button @click="store.reset()">重新选择</el-button>
-      <el-button type="primary" @click="store.startReview()">开始 AI 审查</el-button>
+      <el-button type="primary" :loading="isStarting" @click="startReview">开始 AI 审查</el-button>
     </div>
   </div>
 </template>

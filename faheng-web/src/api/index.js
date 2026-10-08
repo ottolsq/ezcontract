@@ -30,6 +30,9 @@ api.interceptors.response.use(
       }
     } else if (status === 401 && isLoginRequest) {
       ElMessage.error(String(msg))
+    } else if (status === 429) {
+      // 429 Too Many Requests - AI 服务限流
+      ElMessage.warning('AI 服务请求过于频繁，请稍后重试或刷新页面')
     } else if (status) {
       ElMessage.error(String(msg))
     }

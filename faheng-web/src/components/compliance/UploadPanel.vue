@@ -8,6 +8,7 @@ const store = useComplianceStore()
 const uploading = ref(false)
 
 async function beforeUpload(file) {
+  if (uploading.value) return false
   if (!/\.docx$/i.test(file.name)) {
     ElMessage.error('履约模块目前仅支持 .docx 文件')
     return false
@@ -28,6 +29,7 @@ async function beforeUpload(file) {
 }
 
 async function onSample() {
+  if (uploading.value) return
   uploading.value = true
   try {
     await store.loadSample()

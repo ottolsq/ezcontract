@@ -19,13 +19,23 @@ const form = ref({
 })
 
 const reviseInput = ref('')
+const isGenerating = ref(false)
+const isRevising = ref(false)
 
 async function onGenerate() {
   if (!form.value.keywords.trim()) {
     ElMessage.warning('请输入合同关键词')
     return
   }
-  await store.generate(form.value)
+  if (isGenerating.value) return
+  isGenerating.value = true
+  try {
+    await store.generate(form.value)
+  } catch (error) {
+    // 错误已在 api 拦截器中处理
+  } finally {
+    isGenerating.value = false
+  }
 }
 
 async function onRevise() {
@@ -33,8 +43,16 @@ async function onRevise() {
     ElMessage.warning('请输入修改要求')
     return
   }
-  await store.revise(reviseInput.value)
-  reviseInput.value = ''
+  if (isRevising.value) return
+  isRevising.value = true
+  try {
+    await store.revise(reviseInput.value)
+    reviseInput.value = ''
+  } catch (error) {
+    // 错误已在 api 拦截器中处理
+  } finally {
+    isRevising.value = false
+  }
 }
 
 async function onExport() {
@@ -102,7 +120,7 @@ function onFinish() {
           />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="onGenerate">
+          <el-button type="primary" :loading="isGenerating" @click="onGenerate">
             生成合同模板
           </el-button>
         </el-form-item>
@@ -151,7 +169,7 @@ function onFinish() {
             placeholder="如：把付款方式改为按验收节点分期付款，并增加数据导出协助条款"
             @keyup.enter="onRevise"
           />
-          <el-button type="primary" @click="onRevise">
+          <el-button type="primary" :loading="isRevising" @click="onRevise">
             AI 修订
           </el-button>
         </div>

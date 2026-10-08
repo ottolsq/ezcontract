@@ -3,26 +3,66 @@ import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import { useComplianceStore } from '../../stores/compliance'
+import api from '../../api'
 
 const store = useComplianceStore()
 const uploadVisible = ref(false)
 const uploading = ref(false)
+const fileList = ref([])
+const MAX_FILES = 3
 
-async function beforeUpload(file) {
+function beforeUpload(file) {
   if (!/\.docx$/i.test(file.name)) {
-    ElMessage.error('履约模块目前仅支持 .docx 文件')
+    ElMessage.error(`${file.name} 不是 .docx 文件`)
     return false
   }
+  if (file.size > 20 * 1024 * 1024) {
+    ElMessage.error(`${file.name} 超过 20MB`)
+    return false
+  }
+  return true
+}
+
+function handleChange(file, files) {
+  if (files.length > MAX_FILES) {
+    ElMessage.warning(`最多同时上传 ${MAX_FILES} 个合同`)
+    fileList.value = files.slice(0, MAX_FILES)
+  } else {
+    fileList.value = files
+  }
+}
+
+function handleRemove(file, files) {
+  fileList.value = files
+}
+
+async function submitUpload() {
+  if (uploading.value || fileList.value.length === 0) return
+
   uploading.value = true
   try {
-    await store.uploadFile(file)
+    for (const file of fileList.value) {
+      const fd = new FormData()
+      fd.append('file', file.raw)
+      const { data } = await api.post('/compliance/upload', fd)
+      await store.startExtractBackground(data.contract_id)
+    }
+
+    await store.fetchContracts()
+
+    if (fileList.value.length > 1) {
+      ElMessage.success(`已提交 ${fileList.value.length} 个合同进行提取`)
+    } else {
+      ElMessage.success('合同已开始提取')
+    }
+
+    fileList.value = []
     uploadVisible.value = false
-  } catch {
-    /* 拦截器已提示 */
+  } catch (error) {
+    console.error('上传失败:', error)
   } finally {
     uploading.value = false
   }
-  return false
 }
 
 function statusText(c) {
@@ -85,14 +125,32 @@ async function onDelete(c) {
     <el-dialog v-model="uploadVisible" title="上传已签署合同" width="460px">
       <el-upload
         drag
+        multiple
+        :auto-upload="false"
+        :file-list="fileList"
+        :on-change="handleChange"
+        :on-remove="handleRemove"
         :before-upload="beforeUpload"
-        :show-file-list="false"
         accept=".docx"
-        v-loading="uploading"
+        :disabled="uploading"
+        list-type="text"
       >
         <el-icon class="upload-icon"><UploadFilled /></el-icon>
         <div class="el-upload__text">拖拽或 <em>点击选择</em> .docx 文件</div>
+        <template #tip>
+          <div class="el-upload__tip">支持同时上传最多 {{ MAX_FILES }} 个 DOCX 文件，单个不超过 20MB</div>
+        </template>
       </el-upload>
+      <div style="margin-top: 16px; text-align: center;">
+        <el-button
+          type="primary"
+          @click="submitUpload"
+          :disabled="fileList.length === 0 || uploading"
+          :loading="uploading"
+        >
+          {{ uploading ? '上传中...' : `开始提取 (${fileList.length} 个合同)` }}
+        </el-button>
+      </div>
     </el-dialog>
   </div>
 </template>

@@ -86,8 +86,15 @@ onMounted(() => store.fetchContracts())
 </template>
 
 <style scoped>
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 16px 24px;
+}
+
 .compliance-page {
-  align-items: center;
   overflow-y: auto;
 }
 

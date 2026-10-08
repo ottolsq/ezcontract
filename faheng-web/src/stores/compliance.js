@@ -93,6 +93,8 @@ export const useComplianceStore = defineStore('compliance', {
     async startExtract(contractId) {
       this.currentId = contractId
       await api.post(`/compliance/${contractId}/extract`)
+      // 异步操作后检查：如果合同已被删除，不再继续
+      if (this.currentId !== contractId) return
       this.phase = 'processing'
       this.status = 'processing'
       this.progressStage = '正在提取履约节点'
@@ -100,9 +102,17 @@ export const useComplianceStore = defineStore('compliance', {
       this.poll()
     },
 
+    async startExtractBackground(contractId) {
+      // 后台启动提取，不改变当前视图状态
+      await api.post(`/compliance/${contractId}/extract`)
+    },
+
     poll() {
       clearTimeout(this.pollingTimer)
+      if (!this.currentId) return
       this.pollingTimer = setTimeout(async () => {
+        // 再次检查 currentId，防止在等待期间被删除
+        if (!this.currentId) return
         try {
           const { data } = await api.get(`/compliance/${this.currentId}/status`)
           this.status = data.status
@@ -117,8 +127,13 @@ export const useComplianceStore = defineStore('compliance', {
           } else if (data.status === 'failed') {
             // 停在 processing 面板显示错误与重试
           }
-        } catch {
-          this.poll() // 网络抖动继续轮询
+        } catch (error) {
+          // 如果是 404 错误（合同已被删除），停止轮询
+          if (error.response?.status === 404 || !this.currentId) {
+            return
+          }
+          // 其他网络错误继续轮询
+          this.poll()
         }
       }, 1500)
     },
@@ -157,11 +172,14 @@ export const useComplianceStore = defineStore('compliance', {
     },
 
     async deleteContract(contractId) {
-      await api.delete(`/compliance/${contractId}`)
+      // 如果删除的是当前正在提取的合同，先停止轮询并跳转
       if (this.currentId === contractId) {
-        this.contract = null
+        clearTimeout(this.pollingTimer)
         this.currentId = ''
+        this.contract = null
+        this.phase = 'list'
       }
+      await api.delete(`/compliance/${contractId}`)
       await this.fetchContracts()
       // 刷新通知列表，移除已删除合同的相关提醒
       const notificationsStore = useNotificationsStore()

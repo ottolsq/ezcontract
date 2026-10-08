@@ -44,7 +44,9 @@ const today = new Date().toLocaleDateString('zh-CN')
       </div>
     </div>
 
-    <footer class="hint">Demo 演示环境 · 审查依据：ERP 采购合同规则库（26 条）· {{ today }}</footer>
+    <!-- 
+      <footer class="hint">Demo 演示环境 · 审查依据：ERP 采购合同规则库（26 条）· {{ today }}</footer>
+    -->
   </div>
 </template>
 

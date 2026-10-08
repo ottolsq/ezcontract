@@ -20,7 +20,7 @@ async function onLogout() {
 
 <template>
   <div class="app-shell">
-    <header class="top-bar">
+    <header v-if="!isFullscreen" class="top-bar">
       <span class="brand" @click="router.push('/')">⚖️ 法衡 AI · 企业多智能体工作台</span>
 
       <nav v-if="auth.isLoggedIn" class="nav">
@@ -52,7 +52,10 @@ async function onLogout() {
 
 <style scoped>
 .app-shell {
-  min-height: 100vh;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .top-bar {
@@ -77,9 +80,8 @@ async function onLogout() {
 
 /* 全屏路由（如 /login）：绕过固定高度，由子页面自己撑满剩余视口 */
 .app-main--full {
-  height: auto;
-  min-height: calc(100vh - 56px);
-  overflow: visible;
+  flex: 1;
+  overflow: hidden;
   display: block;
 }
 

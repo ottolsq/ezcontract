@@ -141,9 +141,11 @@ onMounted(() => {
         <li><span class="dot"></span>发布前合规审核</li>
       </ul>
 
-      <footer class="brand-footer">
-        © 法衡 AI · 仅供演示 AI 辅助 · 内容均由模型生成
-      </footer>
+      <!--
+        <footer class="brand-footer">
+          © 法衡 AI · 仅供演示 AI 辅助 · 内容均由模型生成
+        </footer>
+      -->
     </section>
 
     <!-- 右侧登录区 -->
@@ -214,20 +216,23 @@ onMounted(() => {
         </el-form>
       </div>
 
+      <!--
       <div class="login-meta">
         <span class="meta-tag">DEMO</span>
         <span>法衡 AI · 企业多智能体工作台</span>
       </div>
+      -->
     </section>
   </div>
 </template>
 
 <style scoped>
 .login-page {
-  min-height: 100vh;
+  height: 100vh;
   display: grid;
   grid-template-columns: 1.1fr 0.9fr;
   background: #f5f7fb;
+  overflow: hidden;
 }
 
 /* —— 左侧 —— */

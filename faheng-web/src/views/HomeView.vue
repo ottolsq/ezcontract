@@ -160,4 +160,37 @@ h2 {
   font-size: 12px;
   margin-top: 48px;
 }
+
+@media (max-width: 768px) {
+  .home {
+    padding: 16px;
+  }
+  .hero {
+    margin-bottom: 24px;
+  }
+  .home h1 {
+    font-size: 26px;
+  }
+  .lead {
+    font-size: 14px;
+  }
+  .cards {
+    grid-template-columns: 1fr;
+  }
+  .card {
+    padding: 20px;
+  }
+}
+
+@media (max-width: 480px) {
+  .home {
+    padding: 12px;
+  }
+  .home h1 {
+    font-size: 22px;
+  }
+  .card h2 {
+    font-size: 18px;
+  }
+}
 </style>

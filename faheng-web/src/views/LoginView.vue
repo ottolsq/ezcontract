@@ -464,12 +464,41 @@ onMounted(() => {
     height: auto;
     min-height: 100vh;
     overflow: auto;
+    grid-template-columns: 1fr;
   }
   .brand-side {
+    display: flex;
+    padding: 32px 16px 16px;
+    align-items: center;
+    text-align: center;
+  }
+  .brand-header {
+    margin-bottom: 0;
+  }
+  .brand-hero {
+    margin-bottom: 0;
+    max-width: 100%;
+  }
+  .brand-hero h1 {
+    font-size: 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .brand-sub {
+    font-size: 11px;
+  }
+  .brand-lead {
+    font-size: 13px;
+    line-height: 1.6;
+    color: #66758a;
+    margin-top: 8px;
+  }
+  .feature-list {
     display: none;
   }
   .login-side {
-    padding: 24px 16px;
+    padding: 16px 16px 32px;
   }
   .login-card {
     width: 100%;

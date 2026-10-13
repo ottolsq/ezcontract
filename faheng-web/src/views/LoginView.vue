@@ -498,12 +498,13 @@ onMounted(() => {
     display: none;
   }
   .login-side {
-    padding: 16px 16px 32px;
+    padding: 0 16px 32px;
+    justify-content: flex-start;
   }
   .login-card {
     width: 100%;
     max-width: 420px;
-    padding: 32px 24px;
+    padding: 24px;
     margin: 0 auto;
   }
   .captcha-row {

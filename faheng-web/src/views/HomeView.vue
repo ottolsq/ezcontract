@@ -10,9 +10,11 @@ const today = new Date().toLocaleDateString('zh-CN')
     <header class="hero">
       <div class="brand">⚖️ 法衡 AI</div>
       <h1>企业多智能体工作台</h1>
+      <!-- 
       <p class="lead">
         合同起草、风险审查等企业智能体持续扩展中 —— AI 负责识别与生成，人负责确认与决策。
       </p>
+      -->
     </header>
 
     <div class="cards">

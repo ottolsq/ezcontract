@@ -65,95 +65,97 @@ async function onDueChange(m, value) {
       <span class="total">共 {{ store.visibleMilestones.length }} 项</span>
     </div>
 
-    <el-table :data="store.visibleMilestones" style="width: 100%" row-key="id">
-      <el-table-column label="履约节点" min-width="260">
-        <template #default="{ row }">
-          <div class="node-cell">
-            <div class="node-title">
-              {{ row.title }}
-              <el-tag
-                v-if="row.recurring !== 'none'"
-                size="small"
-                type="info"
-                class="instance-tag"
-              >第 {{ row.instance_index + 1 }} 期</el-tag>
+    <div class="table-scroll-wrap">
+      <el-table :data="store.visibleMilestones" style="width: 100%" row-key="id">
+        <el-table-column label="履约节点" min-width="260">
+          <template #default="{ row }">
+            <div class="node-cell">
+              <div class="node-title">
+                {{ row.title }}
+                <el-tag
+                  v-if="row.recurring !== 'none'"
+                  size="small"
+                  type="info"
+                  class="instance-tag"
+                >第 {{ row.instance_index + 1 }} 期</el-tag>
+              </div>
+              <div v-if="row.description" class="node-desc">{{ row.description }}</div>
+              <el-tooltip :content="row.clause_text" placement="top" :show-after="300">
+                <span class="node-ref">{{ row.clause_ref || '—' }}</span>
+              </el-tooltip>
             </div>
-            <div v-if="row.description" class="node-desc">{{ row.description }}</div>
-            <el-tooltip :content="row.clause_text" placement="top" :show-after="300">
-              <span class="node-ref">{{ row.clause_ref || '—' }}</span>
-            </el-tooltip>
-          </div>
-        </template>
-      </el-table-column>
+          </template>
+        </el-table-column>
 
-      <el-table-column label="类型" width="90">
-        <template #default="{ row }">
-          <el-tag size="small" :color="TYPE_COLORS[row.node_type]" class="type-tag">
-            {{ TYPE_LABELS[row.node_type] || row.node_type }}
-          </el-tag>
-        </template>
-      </el-table-column>
+        <el-table-column label="类型" width="90">
+          <template #default="{ row }">
+            <el-tag size="small" :color="TYPE_COLORS[row.node_type]" class="type-tag">
+              {{ TYPE_LABELS[row.node_type] || row.node_type }}
+            </el-tag>
+          </template>
+        </el-table-column>
 
-      <el-table-column label="截止日期" width="170">
-        <template #default="{ row }">
-          <el-date-picker
-            v-if="row.needs_review === 1"
-            :model-value="row.due_date"
-            type="date"
-            value-format="YYYY-MM-DD"
-            placeholder="点击补录日期"
-            size="small"
-            style="width: 140px"
-            @update:model-value="(v) => onDueChange(row, v)"
-          />
-          <el-date-picker
-            v-else
-            :model-value="row.due_date"
-            type="date"
-            value-format="YYYY-MM-DD"
-            placeholder="待确认"
-            size="small"
-            style="width: 140px"
-            :clearable="true"
-            @update:model-value="(v) => onDueChange(row, v)"
-          />
-        </template>
-      </el-table-column>
+        <el-table-column label="截止日期" width="170">
+          <template #default="{ row }">
+            <el-date-picker
+              v-if="row.needs_review === 1"
+              :model-value="row.due_date"
+              type="date"
+              value-format="YYYY-MM-DD"
+              placeholder="点击补录日期"
+              size="small"
+              style="width: 140px"
+              @update:model-value="(v) => onDueChange(row, v)"
+            />
+            <el-date-picker
+              v-else
+              :model-value="row.due_date"
+              type="date"
+              value-format="YYYY-MM-DD"
+              placeholder="待确认"
+              size="small"
+              style="width: 140px"
+              :clearable="true"
+              @update:model-value="(v) => onDueChange(row, v)"
+            />
+          </template>
+        </el-table-column>
 
-      <el-table-column label="倒计时" width="110">
-        <template #default="{ row }">
-          <span class="countdown" :style="{ color: countdownColor(row) }">
-            {{ countdownText(row) }}
-          </span>
-        </template>
-      </el-table-column>
+        <el-table-column label="倒计时" width="110">
+          <template #default="{ row }">
+            <span class="countdown" :style="{ color: countdownColor(row) }">
+              {{ countdownText(row) }}
+            </span>
+          </template>
+        </el-table-column>
 
-      <el-table-column label="状态" width="90">
-        <template #default="{ row }">
-          <el-tag v-if="row.status === 'done'" size="small" type="success">已完成</el-tag>
-          <el-tag v-else-if="row.status === 'skipped'" size="small" type="info">已跳过</el-tag>
-          <el-tag v-else size="small" type="warning">待履行</el-tag>
-        </template>
-      </el-table-column>
+        <el-table-column label="状态" width="90">
+          <template #default="{ row }">
+            <el-tag v-if="row.status === 'done'" size="small" type="success">已完成</el-tag>
+            <el-tag v-else-if="row.status === 'skipped'" size="small" type="info">已跳过</el-tag>
+            <el-tag v-else size="small" type="warning">待履行</el-tag>
+          </template>
+        </el-table-column>
 
-      <el-table-column label="操作" width="100" fixed="right">
-        <template #default="{ row }">
-          <el-button
-            v-if="row.status === 'pending'"
-            text
-            size="small"
-            type="success"
-            @click="store.setMilestoneStatus(row.id, 'done')"
-          >标记完成</el-button>
-          <el-button
-            v-else
-            text
-            size="small"
-            @click="store.setMilestoneStatus(row.id, 'pending')"
-          >恢复</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+        <el-table-column label="操作" width="100" fixed="right">
+          <template #default="{ row }">
+            <el-button
+              v-if="row.status === 'pending'"
+              text
+              size="small"
+              type="success"
+              @click="store.setMilestoneStatus(row.id, 'done')"
+            >标记完成</el-button>
+            <el-button
+              v-else
+              text
+              size="small"
+              @click="store.setMilestoneStatus(row.id, 'pending')"
+            >恢复</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
   </div>
 </template>
 
@@ -215,5 +217,25 @@ async function onDueChange(m, value) {
 .countdown {
   font-weight: 600;
   font-size: 13px;
+}
+
+.table-scroll-wrap {
+  overflow-x: auto;
+  width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-scroll-wrap .el-table {
+  min-width: 720px;
+}
+
+@media (max-width: 768px) {
+  .table-head {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .el-radio-group {
+    flex-wrap: wrap;
+  }
 }
 </style>

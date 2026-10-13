@@ -193,4 +193,28 @@ const pendingByLevel = computed(
   color: #087a55;
   font-style: normal;
 }
+
+@media (max-width: 768px) {
+  .risk-pane :deep(.el-card__body) {
+    padding: 12px;
+  }
+  .filters {
+    flex-wrap: wrap;
+  }
+  .filters .filter-btn {
+    flex: 1 1 auto;
+    min-width: 72px;
+    white-space: normal;
+    line-height: 1.3;
+  }
+}
+
+@media (max-width: 480px) {
+  .name {
+    font-size: 12px;
+  }
+  .meta {
+    font-size: 11px;
+  }
+}
 </style>

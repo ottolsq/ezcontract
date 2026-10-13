@@ -156,7 +156,7 @@ h2 {
 }
 
 .progress-wrapper {
-  width: 400px;
+  width: min(400px, calc(100% - 32px));
   margin: 0 auto 10px;
 }
 

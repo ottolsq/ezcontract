@@ -7,6 +7,10 @@ import { useNotificationsStore } from '../stores/notifications'
 const store = useNotificationsStore()
 const router = useRouter()
 
+const popoverWidth = computed(() =>
+  typeof window !== 'undefined' ? Math.min(340, window.innerWidth - 32) : 340,
+)
+
 const recent = computed(() => store.items.slice(0, 10))
 
 function kindIcon(kind) {
@@ -28,7 +32,7 @@ onUnmounted(() => store.stopPolling())
 </script>
 
 <template>
-  <el-popover placement="bottom" :width="340" trigger="click">
+  <el-popover placement="bottom" :width="popoverWidth" trigger="click">
     <template #reference>
       <button class="bell-btn" title="履约提醒通知">
         <el-icon :size="18"><Bell /></el-icon>

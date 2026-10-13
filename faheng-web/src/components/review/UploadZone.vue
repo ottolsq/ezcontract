@@ -105,4 +105,32 @@ h2 {
   justify-content: center;
   gap: 12px;
 }
+
+@media (max-width: 768px) {
+  .upload-wrap {
+    max-width: 100%;
+    margin: 24px auto;
+    padding: 0 16px;
+  }
+  .actions {
+    flex-direction: column;
+    align-items: center;
+  }
+  .actions .el-button {
+    width: 100%;
+    max-width: 320px;
+  }
+}
+
+@media (max-width: 480px) {
+  .upload-wrap {
+    padding: 0 12px;
+  }
+  h2 {
+    font-size: 18px;
+  }
+  .sub {
+    font-size: 13px;
+  }
+}
 </style>

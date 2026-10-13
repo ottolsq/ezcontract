@@ -41,7 +41,8 @@ async function onLogout() {
 <template>
   <div class="app-shell">
     <header v-if="!isFullscreen" class="top-bar">
-      <span class="brand" @click="router.push('/')">⚖️ 法衡 AI · 企业多智能体工作台</span>
+      <span class="brand-full desktop-only" @click="router.push('/')">⚖️ 法衡 AI · 企业多智能体工作台</span>
+      <span class="brand-short mobile-only" @click="router.push('/')">⚖️ 法衡</span>
 
       <nav v-if="auth.isLoggedIn" class="nav desktop-only">
         <router-link to="/draft">合同起草</router-link>
@@ -57,7 +58,7 @@ async function onLogout() {
             <span class="user-name">{{ auth.username }}</span>
           </span>
           <el-button class="desktop-only" text @click="onLogout">退出登录</el-button>
-          <div class="mobile-menu-toggle mobile-only" @click="isMobileMenuOpen = !isMobileMenuOpen">
+          <div class="mobile-menu-toggle mobile-only" @click.stop="isMobileMenuOpen = !isMobileMenuOpen">
             <el-icon><Menu /></el-icon>
           </div>
         </template>
@@ -66,6 +67,12 @@ async function onLogout() {
         </el-button>
       </div>
     </header>
+
+    <div
+      v-if="isMobileMenuOpen"
+      class="mobile-nav-overlay mobile-only"
+      @click="isMobileMenuOpen = false"
+    />
 
     <transition name="slide">
       <nav v-show="isMobileMenuOpen && auth.isLoggedIn" class="mobile-nav mobile-only">
@@ -121,9 +128,18 @@ async function onLogout() {
   display: block;
 }
 
-.brand {
+.brand-full,
+.brand-short {
   font-weight: 600;
   cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.brand-short {
+  display: none;
+  flex-shrink: 0;
 }
 
 .nav {
@@ -220,6 +236,13 @@ async function onLogout() {
   padding: 8px 0;
 }
 
+.mobile-nav-overlay {
+  position: fixed;
+  inset: 56px 0 0 0;
+  background: rgba(0, 0, 0, 0.2);
+  z-index: 99;
+}
+
 .slide-enter-active,
 .slide-leave-active {
   transition: transform 0.2s ease, opacity 0.2s ease;
@@ -233,17 +256,22 @@ async function onLogout() {
 
 @media (max-width: 768px) {
   .top-bar {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     padding: 0 12px;
     position: relative;
   }
 
-  .brand {
-    font-size: 14px;
-    flex: 1;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  .brand-full {
+    display: none;
+  }
+
+  .brand-short {
+    display: inline;
+    font-size: 15px;
+  }
+
+  .nav.desktop-only {
+    display: none !important;
   }
 
   .mobile-menu-toggle {
@@ -251,6 +279,15 @@ async function onLogout() {
     align-items: center;
     justify-content: center;
   }
+
+  .app-main {
+    overflow-y: auto;
+  }
 }
 
+@media (max-width: 480px) {
+  .brand-short {
+    font-size: 14px;
+  }
+}
 </style>

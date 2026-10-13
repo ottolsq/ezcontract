@@ -2,7 +2,7 @@
 
 Pre-flight: shared interfaces across tasks include global CSS variables/mobile-only classes (Task 1 → Tasks 2, 7) and computed dialog width pattern (Task 11). Clean; no conflicts beyond documented interfaces.
 
-Task 1: pending
+Task 1: complete (commits 67f547e..0b4ec1d, tests: node tests/task1-mobile-css.test.js → Task 1 CSS assertions passed, build: npm run build → success)
 Task 2: pending
 Task 3: pending
 Task 4: pending

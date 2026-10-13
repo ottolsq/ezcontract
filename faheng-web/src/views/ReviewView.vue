@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { useReviewStore } from '../stores/review'
@@ -15,6 +15,22 @@ import ReportPanel from '../components/review/ReportPanel.vue'
 const store = useReviewStore()
 const router = useRouter()
 const contractPaneRef = ref(null)
+
+const activeMobileTab = ref('risk')
+const isMobileLayout = ref(false)
+
+function checkLayout() {
+  isMobileLayout.value = window.innerWidth <= 768
+}
+
+onMounted(() => {
+  checkLayout()
+  window.addEventListener('resize', checkLayout)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', checkLayout)
+})
 
 /** 是否对合同正文做过任何影响导出内容的修改（采纳或修改建议） */
 const hasModifiedContract = computed(() =>
@@ -100,10 +116,17 @@ function onFinish() {
         class="download-notice"
       />
       <StatsStrip />
-      <div class="workspace">
+      <div v-if="!isMobileLayout" class="workspace">
         <RiskListPane />
         <ContractPane ref="contractPaneRef" />
         <OpinionPane />
+      </div>
+      <div v-else class="mobile-workspace">
+        <el-tabs v-model="activeMobileTab" class="mobile-tabs" stretch>
+          <el-tab-pane label="风险" name="risk"><RiskListPane /></el-tab-pane>
+          <el-tab-pane label="合同" name="contract"><ContractPane ref="contractPaneRef" /></el-tab-pane>
+          <el-tab-pane label="意见" name="opinion"><OpinionPane /></el-tab-pane>
+        </el-tabs>
       </div>
     </template>
 
@@ -186,5 +209,61 @@ h1 {
   min-height: 0;
   overflow-y: auto;
   padding-right: 4px;
+}
+
+.mobile-workspace {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 12px;
+}
+
+.mobile-tabs {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.mobile-tabs :deep(.el-tabs__content) {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.mobile-tabs :deep(.el-tab-pane) {
+  height: 100%;
+}
+
+@media (max-width: 768px) {
+  .page {
+    padding: 16px;
+  }
+  .page-head {
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .head-actions {
+    flex-wrap: wrap;
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .head-actions .el-button {
+    flex: 1 1 auto;
+    min-width: 96px;
+  }
+  h1 {
+    font-size: 20px;
+  }
+}
+
+@media (max-width: 480px) {
+  .page {
+    padding: 12px;
+  }
+  .head-actions .el-button {
+    min-width: 72px;
+    padding: 8px 10px;
+  }
 }
 </style>

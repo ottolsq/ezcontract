@@ -370,4 +370,33 @@ async function onUndo() {
 .decision-status {
   margin-top: 12px;
 }
+
+@media (max-width: 768px) {
+  .opinion-pane :deep(.el-card__body) {
+    padding: 12px;
+  }
+  .head {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .risk-title {
+    font-size: 15px;
+  }
+  .decision-actions {
+    grid-template-columns: 1fr;
+  }
+  .decision-actions .el-button {
+    width: 100%;
+    white-space: normal;
+    line-height: 1.4;
+    padding: 10px 12px;
+  }
+  .edit-actions {
+    flex-direction: column;
+  }
+  .edit-actions .el-button {
+    width: 100%;
+    margin-left: 0 !important;
+  }
+}
 </style>

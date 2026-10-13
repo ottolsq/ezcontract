@@ -270,4 +270,55 @@ h1 {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+@media (max-width: 768px) {
+  .page {
+    padding: 16px;
+  }
+  .page-head {
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .head-actions {
+    flex-wrap: wrap;
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .head-actions .el-button {
+    flex: 1 1 auto;
+    min-width: 96px;
+  }
+  h1 {
+    font-size: 20px;
+  }
+  .form-card {
+    margin: 24px auto;
+  }
+  .revise-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .revise-row .el-input,
+  .revise-row .el-button {
+    width: 100%;
+    margin-left: 0 !important;
+  }
+  .hist-tag {
+    max-width: 120px;
+  }
+}
+
+@media (max-width: 480px) {
+  .page {
+    padding: 12px;
+  }
+  .form-card {
+    margin: 16px auto;
+  }
+  .pane-head {
+    font-size: 14px;
+  }
+}
 </style>

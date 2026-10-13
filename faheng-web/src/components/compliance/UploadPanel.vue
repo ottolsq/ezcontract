@@ -139,4 +139,24 @@ h2 {
   margin-bottom: 10px;
   color: #66758a;
 }
+
+@media (max-width: 768px) {
+  .upload-wrap {
+    max-width: 100%;
+    margin: 24px auto;
+    padding: 0 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .upload-wrap {
+    padding: 0 12px;
+  }
+  h2 {
+    font-size: 18px;
+  }
+  .sub {
+    font-size: 13px;
+  }
+}
 </style>

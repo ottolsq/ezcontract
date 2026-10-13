@@ -62,4 +62,16 @@ const levelColor = { high: '#e74c3c', medium: '#f39c12', low: '#3498db' }
 .metric.danger strong {
   color: #e74c3c;
 }
+
+@media (max-width: 768px) {
+  .stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .stats {
+    grid-template-columns: 1fr;
+  }
+}
 </style>

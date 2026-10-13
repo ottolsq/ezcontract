@@ -1,9 +1,11 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import { useComplianceStore } from '../../stores/compliance'
 import api from '../../api'
+
+const dialogWidth = computed(() => (window.innerWidth <= 768 ? 'calc(100% - 32px)' : '460px'))
 
 const store = useComplianceStore()
 const uploadVisible = ref(false)
@@ -122,7 +124,7 @@ async function onDelete(c) {
       <span>上传新合同</span>
     </div>
 
-    <el-dialog v-model="uploadVisible" title="上传已签署合同" width="460px">
+    <el-dialog v-model="uploadVisible" title="上传已签署合同" :width="dialogWidth">
       <el-upload
         drag
         multiple
@@ -262,5 +264,30 @@ async function onDelete(c) {
 .upload-icon {
   font-size: 36px;
   color: #2459a9;
+}
+
+@media (max-width: 768px) {
+  .cards {
+    grid-template-columns: 1fr;
+  }
+  .card {
+    padding: 12px;
+  }
+  .counts {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .count {
+    flex: 1 1 40%;
+  }
+}
+
+@media (max-width: 480px) {
+  .card-head {
+    flex-wrap: wrap;
+  }
+  .name {
+    width: 100%;
+  }
 }
 </style>

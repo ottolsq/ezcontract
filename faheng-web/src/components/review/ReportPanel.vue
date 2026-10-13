@@ -38,38 +38,40 @@ const levelLabel = { high: '高风险', medium: '中风险', low: '低风险' }
 
     <el-card shadow="never">
       <template #header>风险处理明细</template>
-      <el-table :data="store.risks" size="small" stripe>
-        <el-table-column prop="clause_no" label="条款" width="90" />
-        <el-table-column prop="title" label="风险" min-width="150" />
-        <el-table-column label="等级" width="80">
-          <template #default="{ row }">{{ levelLabel[row.level] }}</template>
-        </el-table-column>
-        <el-table-column label="决策" width="110">
-          <template #default="{ row }">
-            <el-tag
-              v-if="store.decisions[row.risk_id]"
-              :type="
-                store.decisions[row.risk_id].type === 'rejected' ? 'info' : 'success'
-              "
-              size="small"
-            >
-              {{ decisionLabel[store.decisions[row.risk_id].type] }}
-            </el-tag>
-            <el-tag v-else type="warning" size="small">待处理</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="说明" min-width="180">
-          <template #default="{ row }">
-            <span v-if="store.decisions[row.risk_id]?.reason">
-              {{ store.decisions[row.risk_id].reason }}
-            </span>
-            <span v-else-if="store.decisions[row.risk_id]?.text">
-              {{ store.decisions[row.risk_id].text.slice(0, 50) }}…
-            </span>
-            <span v-else>—</span>
-          </template>
-        </el-table-column>
-      </el-table>
+      <div class="table-scroll-wrap">
+        <el-table :data="store.risks" size="small" stripe>
+          <el-table-column prop="clause_no" label="条款" width="90" />
+          <el-table-column prop="title" label="风险" min-width="150" />
+          <el-table-column label="等级" width="80">
+            <template #default="{ row }">{{ levelLabel[row.level] }}</template>
+          </el-table-column>
+          <el-table-column label="决策" width="110">
+            <template #default="{ row }">
+              <el-tag
+                v-if="store.decisions[row.risk_id]"
+                :type="
+                  store.decisions[row.risk_id].type === 'rejected' ? 'info' : 'success'
+                "
+                size="small"
+              >
+                {{ decisionLabel[store.decisions[row.risk_id].type] }}
+              </el-tag>
+              <el-tag v-else type="warning" size="small">待处理</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="说明" min-width="180">
+            <template #default="{ row }">
+              <span v-if="store.decisions[row.risk_id]?.reason">
+                {{ store.decisions[row.risk_id].reason }}
+              </span>
+              <span v-else-if="store.decisions[row.risk_id]?.text">
+                {{ store.decisions[row.risk_id].text.slice(0, 50) }}…
+              </span>
+              <span v-else>—</span>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
     </el-card>
   </div>
 </template>
@@ -103,5 +105,27 @@ const levelLabel = { high: '高风险', medium: '中风险', low: '低风险' }
 .stat strong {
   font-size: 22px;
   font-weight: 600;
+}
+
+.table-scroll-wrap {
+  overflow-x: auto;
+  width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-scroll-wrap .el-table {
+  min-width: 620px;
+}
+
+@media (max-width: 768px) {
+  .summary {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .summary {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

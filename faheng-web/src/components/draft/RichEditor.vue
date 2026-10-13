@@ -457,4 +457,37 @@ function isActive(name, attrs = undefined) {
   font-weight: bold;
   text-align: center;
 }
+
+@media (max-width: 768px) {
+  .toolbar {
+    gap: 2px;
+    padding: 6px 4px;
+  }
+  .tb-btn {
+    min-width: 28px;
+    padding: 0 6px;
+    font-size: 12px;
+  }
+  .page-frame {
+    padding: 8px 0 16px;
+  }
+  .docx-page {
+    max-width: 100%;
+    padding: 16px;
+    min-height: 60vh;
+  }
+}
+
+@media (max-width: 480px) {
+  .docx-page {
+    padding: 12px;
+    font-size: 11pt;
+  }
+  :deep(.docx-prose h1) {
+    font-size: 18pt;
+  }
+  :deep(.docx-prose h2) {
+    font-size: 13pt;
+  }
+}
 </style>

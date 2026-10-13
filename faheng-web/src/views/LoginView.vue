@@ -204,15 +204,17 @@ onMounted(() => {
             </div>
           </el-form-item>
 
-          <el-button
-            type="primary"
-            size="large"
-            class="login-btn"
-            :loading="submitting"
-            @click="onSubmit"
-          >
-            登 录
-          </el-button>
+          <div class="login-actions">
+            <el-button
+              type="primary"
+              size="large"
+              class="login-btn"
+              :loading="submitting"
+              @click="onSubmit"
+            >
+              登 录
+            </el-button>
+          </div>
         </el-form>
       </div>
 
@@ -454,6 +456,54 @@ onMounted(() => {
   }
   .login-side {
     padding: 32px 16px;
+  }
+}
+
+@media (max-width: 768px) {
+  .login-page {
+    height: auto;
+    min-height: 100vh;
+    overflow: auto;
+  }
+  .brand-side {
+    display: none;
+  }
+  .login-side {
+    padding: 24px 16px;
+  }
+  .login-card {
+    width: 100%;
+    max-width: 420px;
+    padding: 32px 24px;
+    margin: 0 auto;
+  }
+  .captcha-row {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .captcha-canvas-wrap {
+    width: 100%;
+    max-width: 120px;
+  }
+  .login-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .login-card {
+    padding: 24px 16px;
+  }
+  .login-header h2 {
+    font-size: 20px;
+  }
+  .login-actions {
+    flex-direction: column;
+  }
+  .login-actions button {
+    width: 100%;
   }
 }
 </style>

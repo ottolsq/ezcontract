@@ -247,4 +247,37 @@ function clauseClasses(c) {
   background: #e8f8f2;
   box-shadow: inset 3px 0 0 #27ae60;
 }
+
+@media (max-width: 768px) {
+  .contract-pane {
+    padding: 12px;
+  }
+  .head {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .file {
+    max-width: 100%;
+  }
+  .doc-scroll {
+    padding: 12px;
+  }
+  .paper {
+    max-width: 100%;
+    padding: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .paper {
+    padding: 12px;
+    font-size: 11pt;
+  }
+  .paper :deep(h1) {
+    font-size: 18pt;
+  }
+  .paper :deep(h2) {
+    font-size: 13pt;
+  }
+}
 </style>

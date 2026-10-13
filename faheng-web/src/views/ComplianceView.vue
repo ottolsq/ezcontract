@@ -184,4 +184,57 @@ h1 {
   overflow-y: auto;
   padding-bottom: 20px;
 }
+
+@media (max-width: 768px) {
+  .page {
+    padding: 16px;
+  }
+  .page-head {
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .contract-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px;
+  }
+  .contract-info {
+    width: 100%;
+  }
+  .contract-name {
+    display: block;
+    width: 100%;
+    margin-bottom: 6px;
+  }
+  .stats-strip {
+    flex-wrap: wrap;
+    gap: 12px;
+    width: 100%;
+    justify-content: space-around;
+  }
+  .stat {
+    flex: 1 1 30%;
+    min-width: 60px;
+  }
+  h1 {
+    font-size: 20px;
+  }
+}
+
+@media (max-width: 480px) {
+  .page {
+    padding: 12px;
+  }
+  .stats-strip {
+    gap: 8px;
+  }
+  .stat {
+    flex: 1 1 45%;
+  }
+  .stat b {
+    font-size: 18px;
+  }
+}
 </style>

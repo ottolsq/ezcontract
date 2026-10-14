@@ -7,8 +7,9 @@
  * @prop {string} stage - 当前阶段文案（如"正在识别条款..."）
  * @prop {string} title - 主标题（如"正在提取履约节点"）
  * @prop {string} subtitle - 副标题（如文件名）
+ * @prop {boolean} showCancel - 是否显示取消按钮
  */
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 
 const props = defineProps({
   type: {
@@ -32,7 +33,21 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  showCancel: {
+    type: Boolean,
+    default: false,
+  },
 })
+
+const emit = defineEmits(['cancel'])
+
+const cancelling = ref(false)
+
+function onCancel() {
+  if (cancelling.value) return
+  cancelling.value = true
+  emit('cancel')
+}
 
 const CONFIG = {
   draft: {
@@ -98,6 +113,13 @@ onMounted(() => {
 
     <!-- 阶段文案 -->
     <p v-if="stage" class="stage">{{ stage }}</p>
+
+    <!-- 取消按钮 -->
+    <div v-if="showCancel" class="cancel-area">
+      <el-button size="small" type="info" plain :loading="cancelling" @click="onCancel">
+        取消
+      </el-button>
+    </div>
   </div>
 </template>
 
@@ -179,5 +201,43 @@ h2 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.cancel-area {
+  margin-top: 16px;
+}
+
+@media (max-width: 768px) {
+  .loading-indicator {
+    margin: 32px auto;
+    padding: 16px;
+  }
+  .icon-circle {
+    width: 72px;
+    height: 72px;
+    font-size: 30px;
+    margin-bottom: 16px;
+  }
+  h2 {
+    font-size: 18px;
+  }
+  .subtitle,
+  .stage {
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .loading-indicator {
+    margin: 24px auto;
+  }
+  .icon-circle {
+    width: 64px;
+    height: 64px;
+    font-size: 26px;
+  }
+  h2 {
+    font-size: 16px;
+  }
 }
 </style>

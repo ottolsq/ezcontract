@@ -137,6 +137,16 @@ async def status(review_id: str):
     }
 
 
+@router.post("/{review_id}/cancel")
+async def cancel(review_id: str):
+    """取消正在进行的审查任务（前端主动放弃）。"""
+    session = get_review(review_id)
+    if session is None:
+        raise HTTPException(404, "审查任务不存在")
+    SESSIONS.pop(session.id, None)
+    return {"ok": True}
+
+
 @router.get("/{review_id}/result")
 async def result(review_id: str):
     session = get_review(review_id)

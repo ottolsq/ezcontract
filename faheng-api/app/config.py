@@ -4,10 +4,11 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# 项目根目录 = app/ 的上一级
+# 项目根目录 = app/ 的上两级（即 faheng-api/ 的父目录）
 BASE_DIR = Path(__file__).resolve().parent.parent
+ROOT_DIR = BASE_DIR.parent
 
-load_dotenv(BASE_DIR / ".env")
+load_dotenv(ROOT_DIR / ".env")
 
 
 class Settings:

@@ -12,9 +12,11 @@ const store = useDraftStore()
   <div class="draft-loading">
     <LoadingIndicator
       type="draft"
-      :percentage="store.loading ? 30 : 0"
-      :stage="store.revising ? '正在根据要求修订合同...' : '正在生成合同模板...'"
+      :percentage="store.progress"
+      :stage="store.stage || (store.revising ? '正在根据要求修订合同...' : '正在生成合同模板...')"
       :title="store.revising ? '正在修订合同' : '正在生成合同模板'"
+      show-cancel
+      @cancel="store.cancel()"
     />
   </div>
 </template>
@@ -22,7 +24,21 @@ const store = useDraftStore()
 <style scoped>
 .draft-loading {
   width: 480px;
+  max-width: calc(100% - 32px);
   margin: 60px auto;
   text-align: center;
+  padding: 0 16px;
+}
+
+@media (max-width: 768px) {
+  .draft-loading {
+    margin: 40px auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .draft-loading {
+    margin: 24px auto;
+  }
 }
 </style>

@@ -29,12 +29,27 @@ def _fallback_markdown(raw: str) -> DraftLLMOut | None:
     return None
 
 
-async def generate_draft(req: DraftGenerateIn) -> DraftSession:
+def create_generating_session(req: DraftGenerateIn) -> DraftSession:
+    """创建处于生成中的草稿会话，用于前端提前拿到 draftId 并开始轮询。"""
     if not req.keywords.strip():
         raise HTTPException(400, "关键词不能为空")
+    return DraftSession(
+        id=new_draft_id(),
+        title="",
+        markdown="",
+        keywords=req.keywords,
+        status="processing",
+        progress=10,
+        stage="正在准备合同模板生成",
+    )
+
+
+async def generate_draft(session: DraftSession, req: DraftGenerateIn) -> DraftSession:
+    session.status = "processing"
+    session.progress = 30
+    session.stage = "正在调用 AI 生成合同模板"
 
     messages = build_draft_prompt(req)
-    session: DraftSession | None = None
     try:
         out = await chat_json(
             messages,
@@ -43,9 +58,8 @@ async def generate_draft(req: DraftGenerateIn) -> DraftSession:
             max_tokens=settings.DRAFT_MAX_TOKENS,
             salvage=False,
         )
-        session = DraftSession(
-            id=new_draft_id(), title=out.title, markdown=out.markdown, keywords=req.keywords
-        )
+        session.title = out.title
+        session.markdown = out.markdown
     except LLMFormatError:
         # 兜底：直接要一次裸 markdown
         raw = await chat_text(
@@ -62,16 +76,19 @@ async def generate_draft(req: DraftGenerateIn) -> DraftSession:
         )
         fallback = _fallback_markdown(raw)
         if fallback is None:
-            raise HTTPException(502, "合同生成失败，请稍后重试")
-        session = DraftSession(
-            id=new_draft_id(),
-            title=fallback.title,
-            markdown=fallback.markdown,
-            keywords=req.keywords,
-        )
+            session.status = "failed"
+            session.error = "合同生成失败，请稍后重试"
+            session.progress = 0
+            session.stage = ""
+            return session
+        session.title = fallback.title
+        session.markdown = fallback.markdown
 
     session.markdown = _clean_markdown(session.markdown)
     session.markdown = normalize_party_intro_lines(session.markdown)
+    session.status = "completed"
+    session.progress = 100
+    session.stage = "合同模板生成完成"
     return session
 
 
@@ -223,6 +240,9 @@ async def revise_draft(session: DraftSession, instruction: str) -> DraftSession:
     """每次"当前全文 + 指令"整篇重生成（不用多轮历史，避免上下文污染）"""
     if not instruction.strip():
         raise HTTPException(400, "修改要求不能为空")
+    session.status = "processing"
+    session.progress = 30
+    session.stage = "正在调用 AI 修订合同"
     messages = build_revise_prompt(session.markdown, instruction)
     try:
         out = await chat_json(
@@ -234,6 +254,10 @@ async def revise_draft(session: DraftSession, instruction: str) -> DraftSession:
         )
         session.title = out.title or session.title
         session.markdown = normalize_party_intro_lines(_clean_markdown(out.markdown))
+        session.status = "completed"
+        session.progress = 100
+        session.stage = "合同修订完成"
+        session.error = None
     except LLMFormatError:
         raw = await chat_text(
             messages[:-1]
@@ -249,9 +273,17 @@ async def revise_draft(session: DraftSession, instruction: str) -> DraftSession:
         )
         fallback = _fallback_markdown(raw)
         if fallback is None:
-            raise HTTPException(502, "修订失败，请调整措辞后重试")
+            session.status = "failed"
+            session.error = "修订失败，请调整措辞后重试"
+            session.progress = 0
+            session.stage = ""
+            return session
         session.title = fallback.title
         session.markdown = normalize_party_intro_lines(_clean_markdown(fallback.markdown))
+        session.status = "completed"
+        session.progress = 100
+        session.stage = "合同修订完成"
+        session.error = None
 
     from app.schemas.draft import HistoryItem
 

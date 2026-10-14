@@ -354,6 +354,11 @@ async function onUndo() {
   margin-top: 12px;
 }
 
+.decision-actions .el-button {
+  width: 100%;
+  margin: 0;
+}
+
 .edit-box {
   margin-top: 10px;
   background: #f4f7fb;

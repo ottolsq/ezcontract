@@ -96,9 +96,17 @@ async function onLogout() {
 <style scoped>
 .app-shell {
   height: 100vh;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+@supports (height: 100dvh) {
+  .app-shell {
+    height: 100dvh;
+    min-height: 100dvh;
+  }
 }
 
 .top-bar {

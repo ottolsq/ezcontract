@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { useDraftStore } from '../stores/draft'
@@ -67,23 +67,35 @@ async function onExport() {
 
 /** 完成本次起草：清空 store + 跳首页 */
 function onFinish() {
-  store.$reset()
+  store.reset()
   router.push('/')
 }
+
+onMounted(() => {
+  // 刷新后尝试恢复未完成的起草任务（仅在空状态时触发）
+  if (!store.draftId) {
+    store.restoreSession()
+  }
+})
+
+onUnmounted(() => {
+  // 组件卸载时清理轮询
+  clearTimeout(store.pollingTimer)
+})
 </script>
 
 <template>
   <div class="page">
     <div class="page-head">
       <h1>合同起草</h1>
-      <div v-if="store.draftId" class="head-actions">
+      <div v-if="store.draftId && store.status !== 'processing'" class="head-actions">
         <el-button type="warning" @click="onExport">导出 Word</el-button>
         <el-button type="primary" @click="onFinish">完成</el-button>
       </div>
     </div>
 
     <!-- 加载状态：生成或修订中 -->
-    <LoadingPanel v-if="store.loading || store.revising" />
+    <LoadingPanel v-if="store.status === 'processing'" />
 
     <!-- 表单 -->
     <el-card v-else-if="!store.draftId" class="form-card" shadow="never">
@@ -123,6 +135,7 @@ function onFinish() {
           <el-button type="primary" :loading="isGenerating" @click="onGenerate">
             生成合同模板
           </el-button>
+          <el-button v-if="store.status === 'failed'" @click="store.reset()">重新输入</el-button>
         </el-form-item>
       </el-form>
     </el-card>

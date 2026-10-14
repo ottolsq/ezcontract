@@ -11,6 +11,29 @@ import {
   SUBITEM_RE,
 } from './review-diff'
 
+const REVIEW_SESSION_KEY = 'faheng_review_session'
+
+function _loadSession() {
+  try {
+    const raw = localStorage.getItem(REVIEW_SESSION_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+function _saveSession(session) {
+  try {
+    if (session) {
+      localStorage.setItem(REVIEW_SESSION_KEY, JSON.stringify(session))
+    } else {
+      localStorage.removeItem(REVIEW_SESSION_KEY)
+    }
+  } catch {
+    // 隐私模式等场景忽略
+  }
+}
+
 /** 构造匹配 subNo 行首编号的正则（支持 X.Y / X.Y(Z) / 全角括号 → 归一后比对） */
 function subNoLineRe(subNo) {
   const variants = new Set([subNo, subNo.replace(/[(（][0-9０-９a-zA-Z]+[)）]/g, '')])
@@ -102,6 +125,7 @@ export const useReviewStore = defineStore('review', {
       this.tailHtml = data.tail_html || ''
       this._snapshotOriginalClauses()
       this.phase = 'uploaded'
+      this._persistSession()
     },
 
     async startReview() {
@@ -113,7 +137,65 @@ export const useReviewStore = defineStore('review', {
       this.phase = 'processing'
       this.status = 'processing'
       this.progress = { percent: 0, stage: '正在准备条款审查' }
+      this._persistSession()
       this.poll()
+    },
+
+    _persistSession() {
+      _saveSession({
+        reviewId: this.reviewId,
+        phase: this.phase,
+        filename: this.filename,
+      })
+    },
+
+    /** 页面刷新后尝试恢复未完成的审查任务 */
+    async restoreSession() {
+      const session = _loadSession()
+      if (!session?.reviewId) return
+      // 已有当前任务在内存中，不覆盖
+      if (this.reviewId && this.reviewId !== session.reviewId) {
+        _saveSession(null)
+        return
+      }
+      this.reviewId = session.reviewId
+      this.filename = session.filename || ''
+      try {
+        const { data } = await api.get(`/review/${this.reviewId}/status`)
+        this.status = data.status
+        this.progress = { percent: data.progress, stage: data.stage }
+        if (data.status === 'processing') {
+          this.phase = 'processing'
+          this.poll()
+        } else if (data.status === 'completed') {
+          await this.fetchResult()
+        } else if (data.status === 'failed') {
+          this.error = data.error || '审查失败'
+          this.phase = 'processing'
+        } else {
+          // uploaded / 未知：回到上传完成态，等待用户点击开始
+          this.phase = 'uploaded'
+        }
+      } catch (err) {
+        const status = err.response?.status
+        if (status === 404) {
+          ElMessage.warning('之前的审查任务已过期，请重新上传')
+        } else {
+          ElMessage.error('恢复审查任务失败，请刷新重试')
+        }
+        this.reset()
+      }
+    },
+
+    async cancel() {
+      if (!this.reviewId) return
+      try {
+        await api.post(`/review/${this.reviewId}/cancel`)
+        ElMessage.info('已取消任务')
+      } catch {
+        // 即使后端报错也清空本地
+      }
+      this.reset()
     },
 
     poll() {
@@ -155,6 +237,7 @@ export const useReviewStore = defineStore('review', {
       this.filters.status = 'pending'
       this.currentRiskId = this.visibleRisks[0]?.risk_id || ''
       this.phase = 'workspace'
+      this._persistSession()
       ElMessage.success('合同审查完成')
     },
 
@@ -385,6 +468,7 @@ export const useReviewStore = defineStore('review', {
 
     reset() {
       clearTimeout(this.pollingTimer)
+      _saveSession(null)
       this.$reset()
     },
   },

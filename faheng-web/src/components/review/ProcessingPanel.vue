@@ -14,6 +14,8 @@ const store = useReviewStore()
       :stage="store.progress.stage"
       title="正在进行 AI 审查"
       :subtitle="store.filename"
+      show-cancel
+      @cancel="store.cancel()"
     />
 
     <!-- 失败提示 -->
@@ -30,11 +32,25 @@ const store = useReviewStore()
 <style scoped>
 .processing {
   width: 480px;
+  max-width: calc(100% - 32px);
   margin: 60px auto;
   text-align: center;
+  padding: 0 16px;
 }
 
 .err {
   margin-top: 20px;
+}
+
+@media (max-width: 768px) {
+  .processing {
+    margin: 40px auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .processing {
+    margin: 24px auto;
+  }
 }
 </style>

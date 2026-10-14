@@ -65,13 +65,34 @@ const levelColor = { high: '#e74c3c', medium: '#f39c12', low: '#3498db' }
 
 @media (max-width: 768px) {
   .stats {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .metric {
+    padding: 8px 10px;
+  }
+  .metric span {
+    font-size: 11px;
+    margin-bottom: 2px;
+  }
+  .metric strong {
+    font-size: 16px;
   }
 }
 
 @media (max-width: 480px) {
   .stats {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+  }
+  .metric {
+    padding: 6px 8px;
+  }
+  .metric span {
+    font-size: 10px;
+  }
+  .metric strong {
+    font-size: 14px;
   }
 }
 </style>

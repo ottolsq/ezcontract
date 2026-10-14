@@ -26,6 +26,10 @@ function checkLayout() {
 onMounted(() => {
   checkLayout()
   window.addEventListener('resize', checkLayout)
+  // 刷新后尝试恢复未完成的审查任务（仅在空状态时触发，避免覆盖当前任务）
+  if (store.phase === 'upload' && !store.reviewId) {
+    store.restoreSession()
+  }
 })
 
 onUnmounted(() => {
@@ -214,14 +218,21 @@ h1 {
 .mobile-workspace {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   padding: 12px;
 }
 
 .mobile-tabs {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+.mobile-tabs :deep(.el-tabs__header) {
+  flex-shrink: 0;
 }
 
 .mobile-tabs :deep(.el-tabs__content) {
@@ -232,11 +243,14 @@ h1 {
 
 .mobile-tabs :deep(.el-tab-pane) {
   height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 @media (max-width: 768px) {
   .page {
     padding: 16px;
+    min-height: 0;
   }
   .page-head {
     flex-wrap: wrap;
@@ -254,6 +268,9 @@ h1 {
   }
   h1 {
     font-size: 20px;
+  }
+  .mobile-workspace {
+    padding: 0;
   }
 }
 

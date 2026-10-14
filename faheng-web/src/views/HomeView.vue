@@ -28,7 +28,8 @@ const today = new Date().toLocaleDateString('zh-CN')
       <div class="card" @click="router.push('/review')">
         <div class="card-icon">🛡️</div>
         <h2>合同审查智能体</h2>
-        <p>上传 PDF / Word 合同，AI 按企业规则库逐条审查；采纳、修改或驳回，导出修改后合同与审核报告。</p>
+        <!-- <p>上传 PDF / Word 合同，AI 按企业规则库逐条审查；采纳、修改或驳回，导出修改后合同与审核报告。</p> -->
+        <p>上传 Word 合同，AI 按企业规则库逐条审查；采纳、修改或驳回，导出修改后合同与审核报告。</p>
         <div class="flow">上传 → AI 审查 → 三栏工作台 → 导出</div>
       </div>
 

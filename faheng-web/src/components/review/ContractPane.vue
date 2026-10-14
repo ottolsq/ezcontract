@@ -269,15 +269,28 @@ function clauseClasses(c) {
 }
 
 @media (max-width: 480px) {
+  .contract-pane {
+    padding: 8px;
+  }
+  .doc-scroll {
+    padding: 8px;
+  }
   .paper {
     padding: 12px;
-    font-size: 11pt;
+    font-size: 10.5pt;
+    line-height: 1.45;
   }
   .paper :deep(h1) {
-    font-size: 18pt;
+    font-size: 16pt;
+    margin-bottom: 12px;
   }
   .paper :deep(h2) {
-    font-size: 13pt;
+    font-size: 12pt;
+    margin: 12px 0 8px;
+  }
+  .paper :deep(h3),
+  .paper :deep(h4) {
+    font-size: 11pt;
   }
 }
 </style>

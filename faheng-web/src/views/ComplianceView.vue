@@ -95,7 +95,8 @@ onMounted(() => store.fetchContracts())
 }
 
 .compliance-page {
-  overflow-y: auto;
+  /* 桌面端由 .app-main 提供滚动；移动端回退到 body 滚动 */
+  overflow-y: visible;
 }
 
 .page-head {

@@ -9,9 +9,11 @@ const uploading = ref(false)
 const isStarting = ref(false)
 
 async function beforeUpload(file) {
-  const ok = /\.(docx|pdf)$/i.test(file.name)
+  // const ok = /\.(docx|pdf)$/i.test(file.name)
+  const ok = /\.(docx)$/i.test(file.name)
   if (!ok) {
-    ElMessage.error('仅支持 .docx / .pdf 文件')
+    // ElMessage.error('仅支持 .docx / .pdf 文件')
+    ElMessage.error('仅支持 .docx 文件')
     return false
   }
   if (file.size > 20 * 1024 * 1024) {
@@ -51,7 +53,8 @@ async function startReview() {
       <el-icon class="upload-icon"><UploadFilled /></el-icon>
       <div class="el-upload__text">拖拽合同到此处，或 <em>点击选择</em></div>
       <template #tip>
-        <div class="el-upload__tip">支持 DOCX / PDF，单份不超过 20MB</div>
+        <!-- <div class="el-upload__tip">支持 DOCX / PDF，单份不超过 20MB</div> -->
+        <div class="el-upload__tip">支持 DOCX ，单份不超过 20MB</div>
       </template>
     </el-upload>
   </div>
@@ -106,6 +109,10 @@ h2 {
   gap: 12px;
 }
 
+.actions .el-button {
+  margin: 0;
+}
+
 @media (max-width: 768px) {
   .upload-wrap {
     max-width: 100%;
@@ -114,11 +121,12 @@ h2 {
   }
   .actions {
     flex-direction: column;
-    align-items: center;
+    align-items: stretch;
   }
   .actions .el-button {
     width: 100%;
-    max-width: 320px;
+    max-width: none;
+    margin: 0;
   }
 }
 

@@ -1,6 +1,8 @@
 """起草相关 pydantic 模型"""
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel
 
 
@@ -44,3 +46,9 @@ class DraftSession(BaseModel):
     markdown: str
     keywords: str
     history: list[HistoryItem] = []
+
+    # 起草状态机（与审查对齐，支持前端恢复）
+    status: Literal["idle", "processing", "completed", "failed"] = "idle"
+    progress: int = 0
+    stage: str = ""
+    error: str | None = None

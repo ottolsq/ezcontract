@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { Microphone } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useItineraryStore } from '../../stores/itinerary'
@@ -7,73 +7,128 @@ import { useItineraryStore } from '../../stores/itinerary'
 const store = useItineraryStore()
 const supported = ref(false)
 
+// 录音：getUserMedia + MediaRecorder（参考 idcServer 的语音助手实现）
+let mediaStream = null
+let mediaRecorder = null
+let audioChunks = []
+let stopTimer = null
+
 onMounted(() => {
-  supported.value = 'webkitSpeechRecognition' in window || 'SpeechRecognition' in window
+  // 录音能力探测：getUserMedia + MediaRecorder（Chrome/Edge/Firefox/Safari 均支持）
+  supported.value =
+    !!(navigator.mediaDevices?.getUserMedia) &&
+    (typeof MediaRecorder !== 'undefined')
+})
+
+onBeforeUnmount(() => {
+  cleanupRecording()
 })
 
 const isRecording = computed(() => store.voiceRecording)
 
-function start() {
+function cleanupRecording() {
+  clearTimeout(stopTimer)
+  stopTimer = null
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    try {
+      mediaRecorder.stop()
+    } catch {
+      // ignore
+    }
+  }
+  mediaRecorder = null
+  mediaStream?.getTracks().forEach((t) => t.stop())
+  mediaStream = null
+  audioChunks = []
+}
+
+function pickMimeType() {
+  // 常见浏览器录音格式优先级；后端统一转码
+  const candidates = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/ogg;codecs=opus',
+    'audio/mp4',
+    'audio/mpeg',
+  ]
+  for (const type of candidates) {
+    if (MediaRecorder.isTypeSupported?.(type)) return type
+  }
+  return ''
+}
+
+async function start() {
   if (!supported.value) {
-    ElMessage.warning('当前浏览器不支持语音输入，请使用 Chrome 或 Edge 浏览器')
+    ElMessage.warning('当前浏览器不支持录音，请使用 Chrome 或 Edge 浏览器')
     return
   }
   if (!store.selectedArtistId) {
     ElMessage.warning('请先选择或新增一个艺人')
     return
   }
-
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-  const recognition = new SpeechRecognition()
-  recognition.lang = 'zh-CN'
-  recognition.continuous = true
-  recognition.interimResults = true
-
-  store.voiceRecording = true
-  store.voiceText = ''
-  store.voiceParsedEvents = []
-
-  recognition.onresult = (event) => {
-    let final = ''
-    let interim = ''
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      const transcript = event.results[i][0].transcript
-      if (event.results[i].isFinal) {
-        final += transcript
-      } else {
-        interim += transcript
-      }
+  // 录音中再次点击 = 提前结束并送去识别
+  if (store.voiceRecording) {
+    clearTimeout(stopTimer)
+    stopTimer = null
+    try {
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop()
+    } catch {
+      // ignore
     }
-    store.voiceText = (store.voiceText + final).trim() || interim
+    return
   }
 
-  recognition.onerror = (event) => {
-    store.voiceRecording = false
-    if (event.error !== 'aborted') {
-      ElMessage.error('语音识别出错：' + event.error)
+  let stream
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+  } catch (e) {
+    if (e?.name === 'NotAllowedError') {
+      ElMessage.error('麦克风权限未开启，请在浏览器地址栏允许麦克风后重试')
+    } else {
+      ElMessage.error('无法访问麦克风：' + (e?.message || e))
     }
+    return
   }
 
-  recognition.onend = async () => {
+  mediaStream = stream
+  audioChunks = []
+  const mimeType = pickMimeType()
+  mediaRecorder = mimeType
+    ? new MediaRecorder(stream, { mimeType })
+    : new MediaRecorder(stream)
+
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data && e.data.size > 0) audioChunks.push(e.data)
+  }
+
+  mediaRecorder.onstop = async () => {
+    const blob = new Blob(audioChunks, {
+      type: mediaRecorder?.mimeType || 'audio/webm',
+    })
+    cleanupRecording()
     store.voiceRecording = false
-    if (!store.voiceText.trim()) {
+
+    if (!blob.size) {
       ElMessage.warning('未能识别到语音内容，请重试')
       return
     }
     try {
-      await store.parseVoice(store.voiceText)
+      await store.parseVoiceAudio(blob)
       store.voiceDialogVisible = true
     } catch (e) {
       // error handled in store
     }
   }
 
-  recognition.start()
+  store.voiceRecording = true
+  store.voiceText = ''
+  store.voiceParsedEvents = []
+  mediaRecorder.start()
 
   // 10 秒后自动停止录音（避免一直占用麦克风）
-  setTimeout(() => {
+  stopTimer = setTimeout(() => {
     try {
-      recognition.stop()
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop()
     } catch {
       // ignore
     }

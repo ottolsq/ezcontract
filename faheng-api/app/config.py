@@ -21,6 +21,13 @@ class Settings:
     LLM_API_KEY: str = os.getenv("LLM_API_KEY", "")
     LLM_MODEL: str = os.getenv("LLM_MODEL", "deepseek-v4-flash")
 
+    # 语音转文字（浏览器录音 → 后端转写）。浏览器原生 SpeechRecognition
+    # 依赖 Google 在线识别服务，大陆网络下 Chrome 会报 network 错误，
+    # 改为后端调用 SiliconFlow SenseVoiceSmall（OpenAI 兼容接口）。
+    ASR_BASE_URL: str = os.getenv("ASR_BASE_URL", "https://api.siliconflow.cn/v1")
+    ASR_API_KEY: str = os.getenv("ASR_API_KEY", "")
+    ASR_MODEL: str = os.getenv("ASR_MODEL", "FunAudioLLM/SenseVoiceSmall")
+
     RULES_PATH: Path = BASE_DIR / "rules" / "erp_rules.md"
 
     # contract-copilot.skill 本地知识库路径（Plan A：Prompt 升级注入用）

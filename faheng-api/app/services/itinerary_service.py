@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from app.config import settings
+from app.llm.asr import transcribe
 from app.llm.client import LLMFormatError, chat_json
 from app.llm.prompts import build_itinerary_prompt
 from app.schemas.itinerary import (
@@ -181,6 +182,17 @@ def delete_artist(artist_id: str) -> dict:
 
 
 # ── 语音解析 ──
+
+
+async def parse_voice_audio(
+    data: bytes, mime: str, filename: str | None, default_artist_id: str | None
+) -> dict:
+    """浏览器录音 → ASR 转文字 → LLM 解析为行程草稿。"""
+    text = await transcribe(data, mime=mime, filename=filename)
+    if not text.strip():
+        raise HTTPException(422, "未能识别到语音内容，请靠近麦克风重试")
+    out = await parse_voice(VoiceParseIn(text=text, default_artist_id=default_artist_id))
+    return {**out, "text": text}
 
 
 def _resolve_artist(

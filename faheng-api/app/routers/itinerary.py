@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from app.schemas.itinerary import (
     ArtistCreateIn,
@@ -15,6 +15,9 @@ from app.schemas.itinerary import (
 from app.services import itinerary_service
 
 router = APIRouter(prefix="/api/itinerary", tags=["itinerary"])
+
+# 浏览器 10 秒录音（webm/opus）通常 < 500KB；留足余量
+_MAX_AUDIO_BYTES = 20 * 1024 * 1024
 
 
 @router.get("/artists")
@@ -57,6 +60,20 @@ async def remove_event(event_id: str):
 @router.post("/parse-voice")
 async def parse_voice(body: VoiceParseIn):
     return await itinerary_service.parse_voice(body)
+
+
+@router.post("/parse-voice-audio")
+async def parse_voice_audio(
+    file: UploadFile = File(...),
+    default_artist_id: str | None = Form(default=None),
+):
+    """语音录入：上传浏览器录音，先 ASR 转文字再走 LLM 解析。"""
+    data = await file.read()
+    if len(data) > _MAX_AUDIO_BYTES:
+        raise HTTPException(413, "录音文件过大")
+    return await itinerary_service.parse_voice_audio(
+        data, file.content_type or "", file.filename, default_artist_id
+    )
 
 
 @router.post("/confirm")

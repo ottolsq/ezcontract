@@ -204,6 +204,31 @@ export const useItineraryStore = defineStore('itinerary', {
       }
     },
 
+    async parseVoiceAudio(blob) {
+      this.voiceSaving = true
+      this.voiceText = ''
+      try {
+        const form = new FormData()
+        const ext = (blob.type.split('/')[1] || 'webm').split(';')[0]
+        form.append('file', blob, `voice.${ext}`)
+        form.append('default_artist_id', this.selectedArtistId)
+        const { data } = await api.post('/itinerary/parse-voice-audio', form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+        this.voiceText = data.text || ''
+        this.voiceParsedEvents = (data.events || []).map((ev) => ({
+          ...ev,
+          _key: Math.random().toString(36).slice(2),
+        }))
+        return data
+      } catch (e) {
+        ElMessage.error(e.response?.data?.detail || '语音识别失败')
+        throw e
+      } finally {
+        this.voiceSaving = false
+      }
+    },
+
     async confirmVoiceEvents(events) {
       this.voiceSaving = true
       try {

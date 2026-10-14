@@ -1,10 +1,43 @@
 <script setup>
+import { computed } from 'vue'
 import { ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 import { useItineraryStore } from '../../stores/itinerary'
 
 const store = useItineraryStore()
 
 const WEEK_DAYS = ['日', '一', '二', '三', '四', '五', '六']
+
+const calendarDays = computed(() => {
+  const [year, month] = store.currentMonth.split('-').map(Number)
+  const firstDayOfMonth = new Date(year, month - 1, 1)
+  const lastDayOfMonth = new Date(year, month, 0)
+
+  const startOffset = firstDayOfMonth.getDay() // 0 = Sunday
+  const totalDays = lastDayOfMonth.getDate()
+
+  const days = []
+
+  // 上月尾部日期（灰色显示）
+  const prevMonthLastDay = new Date(year, month - 1, 0).getDate()
+  for (let i = startOffset - 1; i >= 0; i--) {
+    const d = prevMonthLastDay - i
+    days.push({ day: d, date: '', isCurrentMonth: false })
+  }
+
+  // 当月日期
+  for (let d = 1; d <= totalDays; d++) {
+    const date = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    days.push({ day: d, date, isCurrentMonth: true })
+  }
+
+  // 下月头部日期（灰色显示），补齐到 42 格
+  const remaining = 42 - days.length
+  for (let d = 1; d <= remaining; d++) {
+    days.push({ day: d, date: '', isCurrentMonth: false })
+  }
+
+  return days
+})
 
 function prevMonth() {
   store.changeMonth(-1)
@@ -36,7 +69,10 @@ function selectDate(date) {
 <template>
   <div class="calendar-card">
     <div class="calendar-header">
-      <h2>{{ store.currentMonth }}</h2>
+      <div class="title-group">
+        <h2>{{ store.currentMonth }}</h2>
+        <span v-if="store.loading" class="loading-hint">加载中…</span>
+      </div>
       <div class="month-nav">
         <el-button :icon="ArrowLeft" circle size="small" @click="prevMonth" />
         <el-button :icon="ArrowRight" circle size="small" @click="nextMonth" />
@@ -46,12 +82,12 @@ function selectDate(date) {
     <div class="calendar-grid">
       <div v-for="d in WEEK_DAYS" :key="d" class="cell header-cell">{{ d }}</div>
       <div
-        v-for="(cell, idx) in store.monthDates"
+        v-for="(cell, idx) in calendarDays"
         :key="idx"
         :class="[
           'cell date-cell',
           {
-            blank: !cell.date,
+            'other-month': !cell.isCurrentMonth,
             today: cell.date === store.selectedDate,
             hasEvent: hasEvent(cell.date),
           },
@@ -71,11 +107,7 @@ function selectDate(date) {
   border: 1px solid #e4e9f2;
   border-radius: 16px;
   padding: 16px 20px 20px;
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  width: 100%;
 }
 
 .calendar-header {
@@ -83,13 +115,25 @@ function selectDate(date) {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
-  flex-shrink: 0;
+}
+
+.title-group {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
 }
 
 .calendar-header h2 {
   margin: 0;
   font-size: 20px;
   color: #1d2b4f;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.loading-hint {
+  font-size: 12px;
+  color: #9aabbe;
 }
 
 .month-nav {
@@ -100,10 +144,7 @@ function selectDate(date) {
 .calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  grid-template-rows: auto 1fr 1fr 1fr 1fr 1fr;
   gap: 8px;
-  flex: 1;
-  min-height: 0;
 }
 
 .cell {
@@ -113,14 +154,13 @@ function selectDate(date) {
   justify-content: center;
   font-size: 14px;
   position: relative;
-  min-height: 0;
 }
 
 .header-cell {
   color: #9aabbe;
   font-weight: 600;
-  padding: 4px 0;
-  min-height: 28px;
+  padding: 6px 0;
+  min-height: 32px;
 }
 
 .date-cell {
@@ -129,11 +169,19 @@ function selectDate(date) {
   cursor: pointer;
   transition: all 0.15s;
   border: 1px solid transparent;
-  min-height: 36px;
+  min-height: 72px;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 8px;
 }
 
 .date-cell:hover {
   background: #eaf2ff;
+}
+
+.date-cell.other-month {
+  color: #c8d0dc;
+  background: #fafbfd;
 }
 
 .date-cell.today {
@@ -146,20 +194,16 @@ function selectDate(date) {
   background: #eaf2ff;
 }
 
-.date-cell.blank {
-  background: transparent;
-  cursor: default;
-}
-
 .day-num {
   position: relative;
   z-index: 1;
+  font-size: 14px;
 }
 
 .event-dot {
   position: absolute;
-  top: 4px;
-  right: 6px;
+  top: 6px;
+  right: 8px;
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
@@ -189,14 +233,24 @@ function selectDate(date) {
 
   .header-cell {
     min-height: 24px;
+    padding: 4px 0;
+  }
+
+  .date-cell {
+    min-height: 52px;
+    padding: 6px;
+  }
+
+  .day-num {
+    font-size: 13px;
   }
 
   .event-dot {
     min-width: 16px;
     height: 16px;
     font-size: 10px;
-    top: 2px;
-    right: 3px;
+    top: 4px;
+    right: 5px;
   }
 }
 
@@ -210,7 +264,16 @@ function selectDate(date) {
   }
 
   .header-cell {
-    min-height: 20px;
+    min-height: 22px;
+    font-size: 12px;
+  }
+
+  .date-cell {
+    min-height: 46px;
+    padding: 4px;
+  }
+
+  .day-num {
     font-size: 12px;
   }
 
@@ -219,6 +282,8 @@ function selectDate(date) {
     height: 14px;
     font-size: 9px;
     padding: 0 3px;
+    top: 3px;
+    right: 3px;
   }
 }
 </style>

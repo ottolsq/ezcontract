@@ -1,4 +1,5 @@
 <script setup>
+import { ref } from 'vue'
 import { Edit, Delete } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import { useItineraryStore } from '../../stores/itinerary'
@@ -15,8 +16,21 @@ const eventTypeMap = {
   other: '其他',
 }
 
+const detailVisible = ref(false)
+const selectedEvent = ref(null)
+
 function typeLabel(type) {
   return eventTypeMap[type] || '其他'
+}
+
+function openDetail(event) {
+  selectedEvent.value = event
+  detailVisible.value = true
+}
+
+function closeDetail() {
+  detailVisible.value = false
+  selectedEvent.value = null
 }
 
 async function remove(eventId) {
@@ -47,6 +61,7 @@ async function remove(eventId) {
         :key="event.id"
         class="event-card"
         :style="{ borderLeftColor: event.artist_color || '#2459a9' }"
+        @click="openDetail(event)"
       >
         <div class="event-main">
           <div class="event-time">{{ event.start_time || '--:--' }} ~ {{ event.end_time || '--:--' }}</div>
@@ -61,11 +76,50 @@ async function remove(eventId) {
           <div v-if="event.notes"><b>备注：</b>{{ event.notes }}</div>
         </div>
         <div class="event-actions">
-          <el-button link size="small" :icon="Edit" @click="emit('edit', event)">编辑</el-button>
-          <el-button link type="danger" size="small" :icon="Delete" @click="remove(event.id)">删除</el-button>
+          <el-button link size="small" :icon="Edit" @click.stop="emit('edit', event)">编辑</el-button>
+          <el-button link type="danger" size="small" :icon="Delete" @click.stop="remove(event.id)">删除</el-button>
         </div>
       </div>
     </div>
+
+    <el-dialog
+      v-model="detailVisible"
+      title="行程详情"
+      width="520px"
+      :close-on-click-modal="true"
+      class="event-detail-dialog"
+      @closed="closeDetail"
+    >
+      <div v-if="selectedEvent" class="detail-body">
+        <div class="detail-header">
+          <div class="detail-time">{{ selectedEvent.start_time || '--:--' }} ~ {{ selectedEvent.end_time || '--:--' }}</div>
+          <h3 class="detail-title">{{ selectedEvent.title }}</h3>
+          <el-tag size="small">{{ typeLabel(selectedEvent.event_type) }}</el-tag>
+        </div>
+        <div class="detail-fields">
+          <div v-if="selectedEvent.location" class="detail-field">
+            <span class="field-label">地点</span>
+            <span class="field-value">{{ selectedEvent.location }}</span>
+          </div>
+          <div v-if="selectedEvent.summary" class="detail-field">
+            <span class="field-label">摘要</span>
+            <span class="field-value">{{ selectedEvent.summary }}</span>
+          </div>
+          <div v-if="selectedEvent.contacts" class="detail-field">
+            <span class="field-label">对接人</span>
+            <span class="field-value">{{ selectedEvent.contacts }}</span>
+          </div>
+          <div v-if="selectedEvent.materials" class="detail-field">
+            <span class="field-label">物料准备</span>
+            <span class="field-value">{{ selectedEvent.materials }}</span>
+          </div>
+          <div v-if="selectedEvent.notes" class="detail-field">
+            <span class="field-label">备注</span>
+            <span class="field-value">{{ selectedEvent.notes }}</span>
+          </div>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -85,6 +139,15 @@ async function remove(eventId) {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  max-height: calc(80vh - 120px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+@media (max-width: 768px) {
+  .event-cards {
+    max-height: calc(70vh - 120px);
+  }
 }
 
 .event-card {
@@ -93,6 +156,13 @@ async function remove(eventId) {
   border-left-width: 4px;
   border-radius: 10px;
   padding: 14px;
+  cursor: pointer;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+
+.event-card:hover {
+  border-color: #2459a9;
+  box-shadow: 0 4px 12px rgba(36, 89, 169, 0.1);
 }
 
 .event-main {
@@ -146,6 +216,76 @@ async function remove(eventId) {
 @media (max-width: 768px) {
   .event-meta {
     grid-template-columns: 1fr;
+  }
+}
+
+.event-detail-dialog :deep(.el-dialog__body) {
+  padding: 0 20px 20px;
+}
+
+.detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #e4e9f2;
+}
+
+.detail-time {
+  font-size: 13px;
+  color: #2459a9;
+  background: #eaf2ff;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-weight: 500;
+}
+
+.detail-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1d2b4f;
+}
+
+.detail-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.detail-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field-label {
+  font-size: 12px;
+  color: #9aabbe;
+  font-weight: 500;
+}
+
+.field-value {
+  font-size: 14px;
+  color: #1d2b4f;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+@media (max-width: 768px) {
+  .event-detail-dialog :deep(.el-dialog) {
+    width: 92% !important;
+  }
+
+  .detail-title {
+    font-size: 16px;
   }
 }
 </style>

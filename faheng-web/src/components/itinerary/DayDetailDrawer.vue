@@ -17,8 +17,8 @@ onMounted(() => {
 })
 
 const title = computed(() => {
-  if (!store.selectedDate) return '行程详情'
-  return `${store.selectedDate} 行程详情`
+  if (!store.selectedDate) return '当日行程'
+  return `${store.selectedDate} 当日行程`
 })
 
 function open() {
@@ -137,7 +137,7 @@ defineExpose({ open })
       v-model="visible"
       :title="title"
       width="92%"
-      top="5vh"
+      top="18vh"
       :close-on-click-modal="true"
       class="day-detail-dialog"
     >
@@ -172,3 +172,12 @@ defineExpose({ open })
     </el-dialog>
   </div>
 </template>
+
+<style scoped>
+:deep(.day-detail-dialog .el-dialog__body) {
+  padding-top: 10%;
+  padding-bottom: 16px;
+  max-height: calc(70vh - 120px);
+  overflow-y: auto;
+}
+</style>

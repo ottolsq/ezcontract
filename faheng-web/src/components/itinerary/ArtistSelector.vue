@@ -49,7 +49,8 @@ async function remove(artist) {
           :model-value="store.selectedArtistId"
           placeholder="选择艺人"
           size="default"
-          style="width: 180px"
+          popper-class="artist-select-dropdown"
+          style="width: 220px"
           @update:model-value="store.selectArtist"
         >
           <template #header>
@@ -114,12 +115,16 @@ async function remove(artist) {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex: 1;
+  min-width: 0;
 }
 
 .select-wrap {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 1;
+  min-width: 0;
 }
 
 .dot {
@@ -138,8 +143,12 @@ async function remove(artist) {
   font-weight: 600;
 }
 
+:deep(.artist-select-dropdown) {
+  min-width: 220px !important;
+}
+
 .dropdown-header {
-  padding: 6px 12px;
+  padding: 8px 12px;
   font-size: 12px;
   color: #9aabbe;
   border-bottom: 1px solid #f0f0f0;
@@ -149,8 +158,9 @@ async function remove(artist) {
 .artist-option {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 2px 0;
+  gap: 10px;
+  /* padding: 6px 0; */
+  width: 100%;
 }
 
 .option-dot {
@@ -162,24 +172,43 @@ async function remove(artist) {
 
 .option-name {
   flex: 1;
+  min-width: 0;
   color: #1d2b4f;
   font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .option-count {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
   font-size: 12px;
   color: #9aabbe;
   background: #f0f4fa;
-  border-radius: 999px;
-  padding: 1px 7px;
+  padding: 0;
+  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .option-del {
-  font-size: 13px;
+  width: 28px;
+  height: 28px;
+  font-size: 16px;
   color: #9aabbe;
   opacity: 0;
-  transition: opacity 0.15s;
-  padding: 2px;
+  transition: opacity 0.15s, color 0.15s;
+  padding: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
 }
 
 .artist-option:hover .option-del {
@@ -188,9 +217,14 @@ async function remove(artist) {
 
 .option-del:hover {
   color: #e74c3c;
+  background: #fdeaea;
 }
 
 @media (max-width: 768px) {
+  .option-del {
+    opacity: 1;
+  }
+
   .artist-bar {
     flex-direction: column;
     align-items: flex-start;

@@ -47,11 +47,14 @@ const today = new Date().toLocaleDateString('zh-CN')
         <div class="flow">语音 → 解析 → 日历/表格</div>
       </div>
 
+      <!--
       <div class="card card-coming">
         <div class="card-icon">🗒️</div>
         <h2>会议纪要 <span class="tag">规划中</span></h2>
         <p>语音转写自动生成结构化纪要，待办事项自动提取。</p>
       </div>
+      -->
+      
     </div>
 
     <!-- 

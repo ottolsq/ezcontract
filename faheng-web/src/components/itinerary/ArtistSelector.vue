@@ -1,39 +1,39 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { Plus, Delete } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import { useItineraryStore } from '../../stores/itinerary'
 
 const store = useItineraryStore()
-const adding = ref(false)
-const newName = ref('')
+const addName = ref('')
+const addDialogVisible = ref(false)
 
-function startAdd() {
-  adding.value = true
-  newName.value = ''
+const selectedLabel = computed(() => {
+  const artist = store.selectedArtist
+  return artist ? artist.name : '选择艺人'
+})
+
+async function openAddDialog() {
+  addName.value = ''
+  addDialogVisible.value = true
 }
 
 async function submitAdd() {
-  const name = newName.value.trim()
+  const name = addName.value.trim()
   if (!name) return
   await store.createArtist(name)
-  adding.value = false
-  newName.value = ''
+  addDialogVisible.value = false
+  addName.value = ''
 }
 
-function cancelAdd() {
-  adding.value = false
-  newName.value = ''
-}
-
-async function remove(id, name) {
+async function remove(artist) {
   try {
-    await ElMessageBox.confirm(`删除艺人「${name}」将同时删除其全部行程，确定吗？`, '确认删除', {
+    await ElMessageBox.confirm(`删除艺人「${artist.name}」将同时删除其全部行程，确定吗？`, '确认删除', {
       confirmButtonText: '删除',
       cancelButtonText: '取消',
       type: 'warning',
     })
-    await store.deleteArtist(id)
+    await store.deleteArtist(artist.id)
   } catch {
     // cancel
   }
@@ -42,70 +42,84 @@ async function remove(id, name) {
 
 <template>
   <div class="artist-bar">
-    <div class="artist-list">
-      <div
-        v-for="artist in store.artists"
-        :key="artist.id"
-        :class="['artist-chip', { active: artist.id === store.selectedArtistId }]"
-        :style="{ borderColor: artist.color }"
-        @click="store.selectArtist(artist.id)"
-      >
-        <span class="dot" :style="{ background: artist.color }"></span>
-        <span class="name">{{ artist.name }}</span>
-        <span class="count">{{ artist.event_count || 0 }}</span>
-        <el-icon class="del" @click.stop="remove(artist.id, artist.name)"><Delete /></el-icon>
+    <div class="artist-select-row">
+      <div class="select-wrap">
+        <span class="dot" :style="{ background: store.selectedArtist?.color || '#2459a9' }"></span>
+        <el-select
+          :model-value="store.selectedArtistId"
+          placeholder="选择艺人"
+          size="default"
+          style="width: 180px"
+          @update:model-value="store.selectArtist"
+        >
+          <template #header>
+            <div class="dropdown-header">选择艺人</div>
+          </template>
+          <el-option
+            v-for="artist in store.artists"
+            :key="artist.id"
+            :label="artist.name"
+            :value="artist.id"
+          >
+            <div class="artist-option">
+              <span class="option-dot" :style="{ background: artist.color }"></span>
+              <span class="option-name">{{ artist.name }}</span>
+              <span class="option-count">{{ artist.event_count || 0 }}</span>
+              <el-icon class="option-del" @click.stop="remove(artist)"><Delete /></el-icon>
+            </div>
+          </el-option>
+        </el-select>
       </div>
 
-      <div v-if="adding" class="artist-chip add-mode">
-        <el-input
-          v-model="newName"
-          size="small"
-          placeholder="艺人姓名"
-          @keyup.enter="submitAdd"
-          @blur="submitAdd"
-        />
-      </div>
-      <div v-else class="add-btn" @click="startAdd">
-        <el-icon><Plus /></el-icon>
-        <span>新增艺人</span>
-      </div>
+      <el-button type="primary" plain size="small" :icon="Plus" @click="openAddDialog">
+        新增艺人
+      </el-button>
     </div>
+
+    <div v-if="store.selectedArtist" class="current-artist">
+      当前艺人：<b :style="{ color: store.selectedArtist.color }">{{ store.selectedArtist.name }}</b>
+    </div>
+
+    <el-dialog
+      v-model="addDialogVisible"
+      title="新增艺人"
+      width="360px"
+      :close-on-click-modal="false"
+    >
+      <el-input v-model="addName" placeholder="请输入艺人姓名" @keyup.enter="submitAdd" />
+      <template #footer>
+        <el-button size="small" @click="addDialogVisible = false">取消</el-button>
+        <el-button type="primary" size="small" @click="submitAdd">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <style scoped>
 .artist-bar {
-  margin-bottom: 16px;
+  margin-bottom: 14px;
   flex-shrink: 0;
-}
-
-.artist-list {
+  background: #fff;
+  border: 1px solid #e4e9f2;
+  border-radius: 12px;
+  padding: 12px 16px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 16px;
   flex-wrap: wrap;
 }
 
-.artist-chip {
-  display: inline-flex;
+.artist-select-row {
+  display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px 6px 10px;
-  background: #fff;
-  border: 2px solid #e4e9f2;
-  border-radius: 999px;
-  cursor: pointer;
-  transition: all 0.2s;
-  font-size: 14px;
+  gap: 12px;
 }
 
-.artist-chip:hover {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-
-.artist-chip.active {
-  background: #f0f7ff;
-  border-width: 2px;
+.select-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .dot {
@@ -115,12 +129,44 @@ async function remove(id, name) {
   flex-shrink: 0;
 }
 
-.name {
-  font-weight: 500;
-  color: #1d2b4f;
+.current-artist {
+  font-size: 13px;
+  color: #66758a;
 }
 
-.count {
+.current-artist b {
+  font-weight: 600;
+}
+
+.dropdown-header {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: #9aabbe;
+  border-bottom: 1px solid #f0f0f0;
+  margin-bottom: 4px;
+}
+
+.artist-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.option-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.option-name {
+  flex: 1;
+  color: #1d2b4f;
+  font-size: 14px;
+}
+
+.option-count {
   font-size: 12px;
   color: #9aabbe;
   background: #f0f4fa;
@@ -128,58 +174,44 @@ async function remove(id, name) {
   padding: 1px 7px;
 }
 
-.del {
+.option-del {
   font-size: 13px;
   color: #9aabbe;
   opacity: 0;
   transition: opacity 0.15s;
+  padding: 2px;
 }
 
-.artist-chip:hover .del {
+.artist-option:hover .option-del {
   opacity: 1;
 }
 
-.del:hover {
+.option-del:hover {
   color: #e74c3c;
 }
 
-.add-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 7px 14px;
-  color: #2459a9;
-  border: 1px dashed #2459a9;
-  border-radius: 999px;
-  cursor: pointer;
-  font-size: 13px;
-  transition: all 0.2s;
-}
-
-.add-btn:hover {
-  background: #f0f7ff;
-}
-
-.add-mode {
-  padding: 4px 8px;
-}
-
 @media (max-width: 768px) {
-  .artist-list {
-    gap: 8px;
+  .artist-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px;
   }
 
-  .artist-chip {
-    padding: 5px 10px 5px 8px;
-    font-size: 13px;
+  .artist-select-row {
+    width: 100%;
   }
 
-  .del {
-    opacity: 1;
+  .select-wrap {
+    flex: 1;
   }
 
-  .add-btn {
-    padding: 6px 12px;
+  .select-wrap :deep(.el-select) {
+    width: 100% !important;
+  }
+
+  .current-artist {
+    width: 100%;
   }
 }
 </style>

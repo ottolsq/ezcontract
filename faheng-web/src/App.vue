@@ -129,6 +129,7 @@ async function onLogout() {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  overflow-y: auto;
 }
 
 /* 全屏路由（如 /login）：绕过固定高度，由子页面自己撑满剩余视口 */

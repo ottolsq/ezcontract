@@ -70,18 +70,20 @@ function selectDate(date) {
   background: #fff;
   border: 1px solid #e4e9f2;
   border-radius: 16px;
-  padding: 20px;
+  padding: 16px 20px 20px;
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .calendar-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
+  flex-shrink: 0;
 }
 
 .calendar-header h2 {
@@ -98,25 +100,27 @@ function selectDate(date) {
 .calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
+  grid-template-rows: auto 1fr 1fr 1fr 1fr 1fr;
   gap: 8px;
   flex: 1;
+  min-height: 0;
 }
 
 .cell {
-  aspect-ratio: 1;
   border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 14px;
   position: relative;
+  min-height: 0;
 }
 
 .header-cell {
   color: #9aabbe;
   font-weight: 600;
-  aspect-ratio: auto;
-  padding-bottom: 4px;
+  padding: 4px 0;
+  min-height: 28px;
 }
 
 .date-cell {
@@ -125,6 +129,7 @@ function selectDate(date) {
   cursor: pointer;
   transition: all 0.15s;
   border: 1px solid transparent;
+  min-height: 36px;
 }
 
 .date-cell:hover {
@@ -169,7 +174,7 @@ function selectDate(date) {
 
 @media (max-width: 768px) {
   .calendar-card {
-    padding: 14px;
+    padding: 12px 14px 14px;
     border-radius: 12px;
   }
 
@@ -180,6 +185,10 @@ function selectDate(date) {
   .cell {
     font-size: 13px;
     border-radius: 8px;
+  }
+
+  .header-cell {
+    min-height: 24px;
   }
 
   .event-dot {
@@ -193,11 +202,23 @@ function selectDate(date) {
 
 @media (max-width: 480px) {
   .calendar-card {
-    padding: 12px;
+    padding: 10px 12px 12px;
   }
 
   .calendar-header h2 {
     font-size: 18px;
+  }
+
+  .header-cell {
+    min-height: 20px;
+    font-size: 12px;
+  }
+
+  .event-dot {
+    min-width: 14px;
+    height: 14px;
+    font-size: 9px;
+    padding: 0 3px;
   }
 }
 </style>

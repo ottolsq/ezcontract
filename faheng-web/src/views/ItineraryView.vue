@@ -23,11 +23,6 @@ onMounted(async () => {
   <div class="page itinerary-page">
     <div class="page-head">
       <h1>艺人行程</h1>
-      <div class="head-actions">
-        <span v-if="store.selectedArtist" class="artist-label" :style="{ color: store.selectedArtist.color }">
-          当前：{{ store.selectedArtist.name }}
-        </span>
-      </div>
     </div>
 
     <ArtistSelector />
@@ -60,7 +55,21 @@ onMounted(async () => {
 }
 
 .itinerary-page {
-  overflow-y: visible;
+  height: 100%;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.itinerary-page :deep(.calendar-card) {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.calendar-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .page-head {

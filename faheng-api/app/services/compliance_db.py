@@ -63,6 +63,37 @@ CREATE TABLE IF NOT EXISTS notifications (
   UNIQUE(milestone_id, kind)
 );
 CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(is_read, id);
+
+-- 人员行程模块（复用同一 SQLite 数据库）
+CREATE TABLE IF NOT EXISTS itinerary_artists (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL UNIQUE,
+  color       TEXT NOT NULL DEFAULT '#2459a9',
+  created_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS itinerary_events (
+  id            TEXT PRIMARY KEY,
+  artist_id     TEXT NOT NULL,
+  event_date    TEXT NOT NULL,  -- YYYY-MM-DD
+  start_time    TEXT,            -- HH:MM
+  end_time      TEXT,            -- HH:MM
+  title         TEXT NOT NULL,   -- 行程事项
+  event_type    TEXT NOT NULL DEFAULT 'other', -- meeting/performance/activity/interview/other
+  location      TEXT NOT NULL DEFAULT '',
+  summary       TEXT NOT NULL DEFAULT '',
+  contacts      TEXT NOT NULL DEFAULT '',
+  materials     TEXT NOT NULL DEFAULT '',
+  notes         TEXT NOT NULL DEFAULT '',
+  status        TEXT NOT NULL DEFAULT 'pending', -- pending|confirmed|deleted
+  raw_text      TEXT NOT NULL DEFAULT '',         -- 原始语音识别文本
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL,
+  FOREIGN KEY (artist_id) REFERENCES itinerary_artists(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_artist_date ON itinerary_events(artist_id, event_date);
+CREATE INDEX IF NOT EXISTS idx_events_status ON itinerary_events(status);
 """
 
 

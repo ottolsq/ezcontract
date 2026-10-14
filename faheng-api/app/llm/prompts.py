@@ -293,3 +293,71 @@ def build_compliance_prompt(
         {"role": "system", "content": COMPLIANCE_SYSTEM},
         {"role": "user", "content": "\n\n".join(user_parts)},
     ]
+
+
+# ── 人员行程语音解析 ──
+
+ITINERARY_SYSTEM = (
+    "你是艺人行程解析助手。从用户的语音描述中提取结构化行程信息。"
+    "只输出 JSON，不输出任何解释、markdown 代码块或其他文本。"
+)
+
+ITINERARY_SCHEMA_HINT = """{
+  "events": [
+    {
+      "artist_name": "艺人姓名；未提及则留空",
+      "event_date": "YYYY-MM-DD；未提及则留空",
+      "time_range": "时间段，如 '14:00-16:00' 或 '下午2点到4点'；未提及则留空",
+      "title": "行程事项，如 '品牌发布会'",
+      "event_type": "meeting | performance | activity | interview | recording | other",
+      "location": "地点",
+      "summary": "内容摘要",
+      "contacts": "随行/对接人",
+      "materials": "物料准备",
+      "notes": "备注"
+    }
+  ]
+}"""
+
+
+def build_itinerary_prompt(raw_text: str) -> list[dict]:
+    """行程语音解析 prompt：用户语音原文 + schema + 字段说明。"""
+    from datetime import date
+
+    today = date.today().isoformat()
+    user_parts = [
+        "## 用户语音原文\n" + raw_text,
+        f"## 今天日期\n今天是 {today}。如果用户只说「几月几号」没提年份，请使用今年的年份（{date.today().year}）。",
+        (
+            "## 任务\n"
+            "从语音原文中提取 1 条或多条艺人行程。每个行程对应一个事件对象。"
+            "如果原文包含多个艺人或多个日期，请拆分成多个事件。输出 JSON：\n"
+            + ITINERARY_SCHEMA_HINT
+        ),
+        (
+            "## 字段说明\n"
+            "- artist_name: 艺人姓名；如果原文没提到就留空字符串，不要编造。\n"
+            "- event_date: 尽量输出 YYYY-MM-DD。如果只说「几月几号」没提年份，按今年处理。\n"
+            "- time_range: 保留用户原描述或整理为 HH:MM-HH:MM；没有就留空。\n"
+            "- title: 行程事项名称，必填。\n"
+            "- event_type: 根据事项判断。会议/会谈→meeting；演出/表演→performance；"
+            "活动/发布会→activity；采访/专访→interview；录制/录音/拍摄→recording；其他→other。\n"
+            "- location: 地点；没有就留空。\n"
+            "- summary: 活动内容摘要；没有就留空。\n"
+            "- contacts: 随行/对接人；没有就留空。\n"
+            "- materials: 物料准备；没有就留空。\n"
+            "- notes: 其他备注；没有就留空。"
+        ),
+        (
+            "## 硬性约束\n"
+            "1. 只输出合法 JSON，不要 markdown 围栏。\n"
+            "2. 不要编造原文中没有的信息。\n"
+            "3. 日期统一为 YYYY-MM-DD，时间统一为 HH:MM 或保留自然描述。\n"
+            "4. 如果无法判断 event_type，使用 other。\n"
+            "5. 确保所有括号引号完整闭合。"
+        ),
+    ]
+    return [
+        {"role": "system", "content": ITINERARY_SYSTEM},
+        {"role": "user", "content": "\n\n".join(user_parts)},
+    ]

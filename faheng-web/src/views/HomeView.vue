@@ -40,6 +40,13 @@ const today = new Date().toLocaleDateString('zh-CN')
         <div class="flow">上传 → AI 提取节点 → 到期提醒</div>
       </div>
 
+      <div class="card" @click="router.push('/itinerary')">
+        <div class="card-icon">🎤</div>
+        <h2>艺人行程</h2>
+        <p>语音录入艺人会议、演出、活动等安排，按日历查看，支持人工确认与编辑。</p>
+        <div class="flow">语音 → 解析 → 日历/表格</div>
+      </div>
+
       <div class="card card-coming">
         <div class="card-icon">🗒️</div>
         <h2>会议纪要 <span class="tag">规划中</span></h2>

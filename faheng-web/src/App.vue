@@ -48,6 +48,7 @@ async function onLogout() {
         <router-link to="/draft">合同起草</router-link>
         <router-link to="/review">合同审查</router-link>
         <router-link to="/compliance">履约提醒</router-link>
+        <router-link to="/itinerary">艺人行程</router-link>
       </nav>
 
       <div class="right-area">
@@ -79,6 +80,7 @@ async function onLogout() {
         <router-link to="/draft" @click="isMobileMenuOpen = false">合同起草</router-link>
         <router-link to="/review" @click="isMobileMenuOpen = false">合同审查</router-link>
         <router-link to="/compliance" @click="isMobileMenuOpen = false">履约提醒</router-link>
+        <router-link to="/itinerary" @click="isMobileMenuOpen = false">艺人行程</router-link>
         <span class="mobile-user-row">
           <span class="user-avatar">{{ auth.username.charAt(0).toUpperCase() }}</span>
           <span class="user-name">{{ auth.username }}</span>

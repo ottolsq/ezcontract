@@ -52,7 +52,9 @@ class Settings:
     # 演示 token 有效期（秒）—— 进程内存白名单，重启后失效需重新登录
     AUTH_TOKEN_TTL: int = int(os.getenv("AUTH_TOKEN_TTL", "86400"))
 
-    # ── 履约提醒模块（项目首个持久化模块：SQLite，stdlib）──
+    # ── 人员行程模块（复用同一 SQLite）──
+    ITINERARY_TEMPERATURE: float = 0.0
+    ITINERARY_MAX_TOKENS: int = 4000
     # 库文件位置：faheng-api/data/compliance.db（.gitignore 已忽略 data/）
     COMPLIANCE_DB_PATH: Path = BASE_DIR / "data" / "compliance.db"
     COMPLIANCE_TEMPERATURE: float = 0.0

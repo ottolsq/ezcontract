@@ -30,6 +30,12 @@ const router = createRouter({
       component: () => import('../views/ComplianceView.vue'),
       meta: { requiresAuth: true },
     },
+    {
+      path: '/itinerary',
+      name: 'itinerary',
+      component: () => import('../views/ItineraryView.vue'),
+      meta: { requiresAuth: true },
+    },
   ],
 })
 

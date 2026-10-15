@@ -16,7 +16,7 @@ from pathlib import Path
 from fastapi import HTTPException, UploadFile
 
 from app.config import settings
-from app.llm.client import LLMFormatError, chat_json
+from app.llm.client import LLMConfigError, LLMFormatError, chat_json
 from app.llm.prompts import build_compliance_prompt
 from app.parser.clause_splitter import split_clauses
 from app.parser.docx_parser import extract_docx_paragraphs
@@ -168,6 +168,8 @@ async def run_extraction(contract_id: str) -> None:
                     max_tokens=settings.COMPLIANCE_MAX_TOKENS,
                     salvage=False,
                 )
+            except LLMConfigError:
+                fallback_reason = "AI 配置异常，请及时联系管理员"
             except LLMFormatError as e:
                 fallback_reason = f"AI 提取失败（{str(e)[:80]}），已转为人工确认模式"
         else:

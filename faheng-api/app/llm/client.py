@@ -8,13 +8,16 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import TypeVar
 
-from openai import AsyncOpenAI
+from openai import APIConnectionError, APIStatusError, AsyncOpenAI
 from pydantic import BaseModel, ValidationError
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -36,6 +39,14 @@ def get_client() -> AsyncOpenAI:
 
 class LLMFormatError(Exception):
     """LLM 输出经多次尝试仍无法解析为目标 schema；也用于网关异常响应（choices 为空）"""
+
+
+class LLMConfigError(Exception):
+    """LLM 网关连接/服务故障（超时、5xx、断连等基础配置层面问题）。
+
+    与 LLMFormatError 分开：这类不是提示词/输出格式问题，重试也救不回来，
+    应直接提示用户"AI 配置异常，请联系管理员"，不进入格式重试循环。
+    """
 
 
 def _clean(raw: str) -> str:
@@ -110,6 +121,24 @@ def _ensure_choices(resp) -> None:
         raise LLMFormatError(f"LLM 网关返回空 choices（原始响应：{raw}）")
 
 
+def _wrap_gateway_error(e: Exception) -> Exception:
+    """把 openai SDK 的连接层异常统一转成 LLMConfigError（附简短原因）。
+
+    覆盖：超时 / 断连 / DNS / TLS（APIConnectionError 含 APITimeoutError）
+    与网关 5xx、401/403、429（APIStatusError）。
+    """
+    if isinstance(e, APIConnectionError):
+        # 超时的报文已带"timed out"，无需重复加工
+        logger.warning("LLM 网关连接异常：%s", e)
+        return LLMConfigError(f"AI 服务连接异常（{type(e).__name__}），请稍后重试")
+    if isinstance(e, APIStatusError):
+        logger.warning("LLM 网关返回 %s：%s", e.status_code, str(e)[:300])
+        return LLMConfigError(
+            f"AI 服务返回错误（HTTP {e.status_code}），请稍后重试或联系管理员"
+        )
+    return e
+
+
 async def chat_text(
     messages: list[dict],
     temperature: float = 0.0,
@@ -127,13 +156,18 @@ async def chat_text(
     kwargs: dict = {}
     if reasoning_effort:
         kwargs["reasoning_effort"] = reasoning_effort
-    resp = await get_client().chat.completions.create(
-        model=settings.LLM_MODEL,
-        messages=messages,  # type: ignore[arg-type]
-        temperature=temperature,
-        max_tokens=max_tokens,
-        **kwargs,
-    )
+    try:
+        resp = await get_client().chat.completions.create(
+            model=settings.LLM_MODEL,
+            messages=messages,  # type: ignore[arg-type]
+            temperature=temperature,
+            max_tokens=max_tokens,
+            **kwargs,
+        )
+    except APIConnectionError as e:
+        raise _wrap_gateway_error(e) from None
+    except APIStatusError as e:
+        raise _wrap_gateway_error(e) from None
     _ensure_choices(resp)
     text = resp.choices[0].message.content or ""
     if strip_emoji:
@@ -162,13 +196,19 @@ async def chat_json(
         kwargs["reasoning_effort"] = reasoning_effort
 
     for attempt in range(1, MAX_ATTEMPTS + 1):
-        resp = await get_client().chat.completions.create(
-            model=settings.LLM_MODEL,
-            messages=current_messages,  # type: ignore[arg-type]
-            temperature=temperature,
-            max_tokens=max_tokens,
-            **kwargs,
-        )
+        try:
+            resp = await get_client().chat.completions.create(
+                model=settings.LLM_MODEL,
+                messages=current_messages,  # type: ignore[arg-type]
+                temperature=temperature,
+                max_tokens=max_tokens,
+                **kwargs,
+            )
+        except APIConnectionError as e:
+            raise _wrap_gateway_error(e) from None
+        except APIStatusError as e:
+            # 429/5xx 属于服务端故障：格式重试无意义，直接上抛
+            raise _wrap_gateway_error(e) from None
         try:
             _ensure_choices(resp)
         except LLMFormatError as e:

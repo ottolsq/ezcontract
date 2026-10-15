@@ -8,7 +8,7 @@ import uuid
 from fastapi import HTTPException
 
 from app.config import settings
-from app.llm.client import LLMFormatError, chat_json, chat_text
+from app.llm.client import LLMConfigError, LLMFormatError, chat_json, chat_text
 from app.llm.prompts import build_draft_prompt, build_revise_prompt
 from app.schemas.draft import DraftGenerateIn, DraftLLMOut, DraftSession
 from app.services.docx_export import export_html_docx, export_markdown_docx
@@ -60,6 +60,13 @@ async def generate_draft(session: DraftSession, req: DraftGenerateIn) -> DraftSe
         )
         session.title = out.title
         session.markdown = out.markdown
+    except LLMConfigError:
+        # 网关故障：格式兜底（再要一次裸 markdown）也无意义，直接失败
+        session.status = "failed"
+        session.error = "AI 配置异常，请及时联系管理员"
+        session.progress = 0
+        session.stage = ""
+        return session
     except LLMFormatError:
         # 兜底：直接要一次裸 markdown
         raw = await chat_text(
@@ -258,6 +265,13 @@ async def revise_draft(session: DraftSession, instruction: str) -> DraftSession:
         session.progress = 100
         session.stage = "合同修订完成"
         session.error = None
+    except LLMConfigError:
+        # 网关故障：格式兜底无意义，直接失败
+        session.status = "failed"
+        session.error = "AI 配置异常，请及时联系管理员"
+        session.progress = 0
+        session.stage = ""
+        return session
     except LLMFormatError:
         raw = await chat_text(
             messages[:-1]

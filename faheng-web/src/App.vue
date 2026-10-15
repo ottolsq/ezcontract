@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Menu } from '@element-plus/icons-vue'
@@ -11,6 +11,15 @@ const route = useRoute()
 const auth = useAuthStore()
 
 const isFullscreen = computed(() => Boolean(route.meta.fullscreen))
+
+// 路由切到全屏页（如 /login）时强制收起移动端菜单与遮罩：
+// 全屏路由下顶栏不渲染，菜单开关状态成了孤儿，遮罩会一直盖在页面上
+watch(
+  () => route.fullPath,
+  () => {
+    if (isFullscreen.value) isMobileMenuOpen.value = false
+  }
+)
 
 const isMobileMenuOpen = ref(false)
 const isMobile = ref(false)
@@ -33,6 +42,9 @@ onUnmounted(() => {
 
 async function onLogout() {
   await auth.logout()
+  // 移动端菜单展开时点退出：菜单/遮罩若不手动收起，
+  // 路由切到 /login 后仍挂在页面上，登录页会出现黑色遮罩
+  isMobileMenuOpen.value = false
   ElMessage.success('已退出登录')
   router.push('/login')
 }
@@ -70,13 +82,13 @@ async function onLogout() {
     </header>
 
     <div
-      v-if="isMobileMenuOpen"
+      v-if="isMobileMenuOpen && !isFullscreen"
       class="mobile-nav-overlay mobile-only"
       @click="isMobileMenuOpen = false"
     />
 
     <transition name="slide">
-      <nav v-show="isMobileMenuOpen && auth.isLoggedIn" class="mobile-nav mobile-only">
+      <nav v-show="isMobileMenuOpen && auth.isLoggedIn && !isFullscreen" class="mobile-nav mobile-only">
         <router-link to="/draft" @click="isMobileMenuOpen = false">合同起草</router-link>
         <router-link to="/review" @click="isMobileMenuOpen = false">合同审查</router-link>
         <router-link to="/compliance" @click="isMobileMenuOpen = false">履约提醒</router-link>

@@ -28,6 +28,20 @@ let stopTimer = null
 const isRecording = computed(() => phase.value === 'recording')
 const busy = computed(() => phase.value !== 'idle' || Date.now() < lockUntil)
 
+/** 立即停止录音并释放麦克风（不等待 onstop 回调清理） */
+function forceStopRecording() {
+  clearTimeout(stopTimer)
+  stopTimer = null
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    try {
+      mediaRecorder.stop() // 触发 onstop → 进入转写流程
+    } catch {
+      // ignore
+    }
+  }
+  mediaStream?.getTracks().forEach((t) => t.stop()) // 麦克风指示灯立即熄灭
+}
+
 onMounted(() => {
   nativeSupported.value =
     window.isSecureContext &&
@@ -153,18 +167,21 @@ async function start() {
   phase.value = 'recording'
   store.voiceText = ''
   store.voiceParsedEvents = []
-  mediaRecorder.start()
+  try {
+    // timeslice 500ms：ondataavailable 持续产出分片，避免个别浏览器
+    // 只在 stop 时一次性给数据导致的"停止无响应"问题
+    mediaRecorder.start(500)
+  } catch {
+    mediaRecorder.start()
+  }
 
   // 10 秒后自动停止录音（避免一直占用麦克风）
   stopTimer = setTimeout(() => {
-    try {
-      if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop()
-    } catch {
-      // ignore
-    }
+    forceStopRecording()
   }, 10000)
 }
 
+/** 兜底通道：系统录音器返回的文件 → 直接转写（无录音过程，仅占用 processing 阶段） */
 /** 兜底通道：系统录音器返回的文件 → 直接转写（无录音过程，仅占用 processing 阶段） */
 async function onFileChange(e) {
   const file = e.target.files?.[0]
@@ -183,17 +200,26 @@ async function onFileChange(e) {
 
   await processBlob(file, file.name)
 }
+
+/** 点击行为：录音中点击 = 立即结束并送去识别；其他状态走 start 防抖入口 */
+function onClick() {
+  if (phase.value === 'recording') {
+    forceStopRecording()
+    return
+  }
+  start()
+}
 </script>
 
 <template>
-  <div class="voice-fab" @click="start">
+  <div class="voice-fab" @click="onClick">
     <div :class="['pulse-ring', { recording: isRecording }]"></div>
     <div :class="['btn', { recording: isRecording }]">
       <el-icon v-if="phase === 'processing'"><Loading class="spin" /></el-icon>
       <el-icon v-else><Microphone /></el-icon>
     </div>
     <div v-if="phase === 'processing'" class="tip">识别中…</div>
-    <div v-else-if="isRecording" class="tip">正在听…</div>
+    <div v-else-if="isRecording" class="tip">正在听（点击结束）</div>
     <div v-else class="tip">语音录入</div>
     <!-- HTTP 等非安全上下文：调起手机系统录音器，录完直接上传转写 -->
     <input

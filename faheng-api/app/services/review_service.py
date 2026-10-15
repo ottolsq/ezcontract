@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi import HTTPException, UploadFile
 
 from app.config import settings
-from app.llm.client import LLMFormatError, chat_json
+from app.llm.client import LLMConfigError, LLMFormatError, chat_json
 from app.llm.prompts import build_review_prompt
 from app.parser.clause_splitter import split_clauses
 from app.parser.docx_parser import extract_docx_paragraphs
@@ -518,6 +518,9 @@ async def run_review(session: ReviewSession) -> None:
                     max_tokens=settings.REVIEW_MAX_TOKENS,
                 )
                 all_risks.extend(out.risks)
+            except LLMConfigError:
+                # 网关连接/服务故障：重试无意义，终止整个审查
+                raise LLMConfigError("AI 配置异常，请及时联系管理员") from None
             except LLMFormatError as e:
                 # 单批失败不终止整个审查
                 session.stage = f"批次 {i + 1} 解析失败已跳过：{str(e)[:80]}"

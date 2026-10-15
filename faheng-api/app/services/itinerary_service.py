@@ -11,7 +11,7 @@ from fastapi import HTTPException
 
 from app.config import settings
 from app.llm.asr import transcribe
-from app.llm.client import LLMFormatError, chat_json
+from app.llm.client import LLMConfigError, LLMFormatError, chat_json
 from app.llm.prompts import build_itinerary_prompt
 from app.schemas.itinerary import (
     ArtistCreateIn,
@@ -251,6 +251,9 @@ async def parse_voice(body: VoiceParseIn) -> dict:
             # 语音录入是交互场景，用户在等结果；跳过思维链，秒级返回
             reasoning_effort="low",
         )
+    except LLMConfigError:
+        # 网关连接/服务故障：用户无需知道细节，提示联系管理员即可
+        raise HTTPException(503, "AI 配置异常，请及时联系管理员") from None
     except LLMFormatError as e:
         raise HTTPException(422, f"AI 解析失败：{e}") from None
 

@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useItineraryStore } from '../../stores/itinerary'
+import { useVoiceRecorder } from '../../composables/useVoiceRecorder'
 import EventForm from './EventForm.vue'
 import DayDetailContent from './DayDetailContent.vue'
 
@@ -17,8 +18,25 @@ function open() {
   visible.value = true
 }
 
-function close() {
-  visible.value = false
+// 弹框内语音录入：默认日期 = 点击的日期（语音中提到日期则以后端解析为准，
+// 由 default_date 兜底语义保证）。解析成功后确认框叠加在本弹框之上。
+const rec = useVoiceRecorder({
+  onResult: () => {
+    store.voiceDialogVisible = true
+  },
+})
+
+function onVoiceClick() {
+  if (!store.selectedArtistId) {
+    ElMessage.warning('请先选择或新增一个人员')
+    return
+  }
+  rec.toggle()
+}
+
+// 关闭当日弹框时停掉进行中的录音并释放麦克风
+function onDialogClose() {
+  rec.dispose()
 }
 
 const editingEvent = ref(null)
@@ -106,8 +124,14 @@ defineExpose({ open, close })
       width="640px"
       :close-on-click-modal="true"
       class="day-detail-dialog"
+      @close="onDialogClose"
     >
-      <DayDetailContent @add="startAdd" @edit="startEdit" @remove="removeEvent" />
+      <DayDetailContent
+        @add="startAdd"
+        @edit="startEdit"
+        @remove="removeEvent"
+        @voice="onVoiceClick"
+      />
     </el-dialog>
 
     <!-- 编辑/新增弹窗 -->

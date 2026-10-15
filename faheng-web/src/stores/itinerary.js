@@ -184,12 +184,14 @@ export const useItineraryStore = defineStore('itinerary', {
       }
     },
 
-    async parseVoice(text) {
+    async parseVoice(text, defaultDate) {
       this.voiceSaving = true
       try {
         const { data } = await api.post('/itinerary/parse-voice', {
           text,
           default_artist_id: this.selectedArtistId,
+          // 当日弹框语音录入：未提日期时以点击的日期兜底（悬浮按钮不传）
+          default_date: defaultDate || undefined,
         })
         this.voiceParsedEvents = (data.events || []).map((ev) => ({
           ...ev,
@@ -205,7 +207,7 @@ export const useItineraryStore = defineStore('itinerary', {
       }
     },
 
-    async parseVoiceAudio(blob, filename) {
+    async parseVoiceAudio(blob, filename, defaultDate) {
       this.voiceSaving = true
       this.voiceText = ''
       try {
@@ -215,6 +217,8 @@ export const useItineraryStore = defineStore('itinerary', {
         const ext = (blob.type.split('/')[1] || 'webm').split(';')[0]
         form.append('file', blob, filename || `voice.${ext}`)
         form.append('default_artist_id', this.selectedArtistId)
+        // 当日弹框语音录入：未提日期时以点击的日期兜底（悬浮按钮不传）
+        if (defaultDate) form.append('default_date', defaultDate)
         const { data } = await api.post('/itinerary/parse-voice-audio', form, {
           headers: { 'Content-Type': 'multipart/form-data' },
         })

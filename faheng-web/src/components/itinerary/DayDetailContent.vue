@@ -1,11 +1,11 @@
 <script setup>
 import { ref } from 'vue'
-import { Edit, Delete } from '@element-plus/icons-vue'
+import { Edit, Delete, Microphone } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import { useItineraryStore } from '../../stores/itinerary'
 
 const store = useItineraryStore()
-const emit = defineEmits(['add', 'edit', 'remove'])
+const emit = defineEmits(['add', 'edit', 'remove', 'voice'])
 
 const eventTypeMap = {
   meeting: '会议',
@@ -50,7 +50,8 @@ async function remove(eventId) {
 <template>
   <div>
     <div class="detail-actions">
-      <el-button type="primary" size="small" :icon="Edit" @click="emit('add')">新增当日行程</el-button>
+      <el-button type="primary" size="small" :icon="Edit" @click="emit('add')">手动新增当日行程</el-button>
+      <el-button size="small" :icon="Microphone" @click="emit('voice')">语音录入当日行程</el-button>
     </div>
     <div v-if="store.dailyEvents.length === 0" class="empty-state">
       <p>当日暂无行程</p>
@@ -126,6 +127,9 @@ async function remove(eventId) {
 <style scoped>
 .detail-actions {
   margin-bottom: 16px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .empty-state {

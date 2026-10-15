@@ -188,14 +188,19 @@ def delete_artist(artist_id: str) -> dict:
 
 
 async def parse_voice_audio(
-    data: bytes, mime: str, filename: str | None, default_artist_id: str | None
+    data: bytes, mime: str, filename: str | None, default_artist_id: str | None,
+    default_date: str | None = None,
 ) -> dict:
     """浏览器录音 → ASR 转文字 → LLM 解析为行程草稿。"""
     text = await transcribe(data, mime=mime, filename=filename)
     logger.info("语音识别结果（%d 字符）：%s", len(text), text)
     if not text.strip():
         raise HTTPException(422, "未能识别到语音内容，请靠近麦克风重试")
-    out = await parse_voice(VoiceParseIn(text=text, default_artist_id=default_artist_id))
+    out = await parse_voice(
+        VoiceParseIn(
+            text=text, default_artist_id=default_artist_id, default_date=default_date
+        )
+    )
     return {**out, "text": text}
 
 
@@ -264,6 +269,13 @@ async def parse_voice(body: VoiceParseIn) -> dict:
         )
         # 日期/时间代码兜底
         event_date = _normalize_date(ev.event_date) if ev.event_date else ""
+        # 当日弹框语音录入：语音没提日期时以点击的日期为准（非法格式静默忽略）
+        if not event_date and body.default_date:
+            try:
+                date.fromisoformat(body.default_date)
+                event_date = body.default_date
+            except ValueError:
+                pass
         start_time, end_time = _normalize_time_range(ev.time_range)
         event_type = ev.event_type
         if event_type == "other":

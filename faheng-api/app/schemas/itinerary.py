@@ -78,6 +78,8 @@ class EventUpdateIn(BaseModel):
 class VoiceParseIn(BaseModel):
     text: str
     default_artist_id: str | None = None  # 当前选中人员兜底
+    # 当日弹框语音录入：未提日期时的兜底（YYYY-MM-DD）
+    default_date: str | None = None
 
 
 class ConfirmIn(BaseModel):

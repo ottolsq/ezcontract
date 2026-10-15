@@ -66,13 +66,14 @@ async def parse_voice(body: VoiceParseIn):
 async def parse_voice_audio(
     file: UploadFile = File(...),
     default_artist_id: str | None = Form(default=None),
+    default_date: str | None = Form(default=None),
 ):
     """语音录入：上传浏览器录音，先 ASR 转文字再走 LLM 解析。"""
     data = await file.read()
     if len(data) > _MAX_AUDIO_BYTES:
         raise HTTPException(413, "录音文件过大")
     return await itinerary_service.parse_voice_audio(
-        data, file.content_type or "", file.filename, default_artist_id
+        data, file.content_type or "", file.filename, default_artist_id, default_date
     )
 
 

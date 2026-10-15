@@ -5,6 +5,8 @@ import { ElMessage } from 'element-plus'
 import { Menu } from '@element-plus/icons-vue'
 import { useAuthStore } from './stores/auth'
 import NotificationBell from './components/NotificationBell.vue'
+import VoiceGlobalIndicator from './components/VoiceGlobalIndicator.vue'
+import { resetVoiceRecorder } from './composables/useVoiceRecorder'
 
 const router = useRouter()
 const route = useRoute()
@@ -17,7 +19,12 @@ const isFullscreen = computed(() => Boolean(route.meta.fullscreen))
 watch(
   () => route.fullPath,
   () => {
-    if (isFullscreen.value) isMobileMenuOpen.value = false
+    if (isFullscreen.value) {
+      isMobileMenuOpen.value = false
+      // 全屏路由（登录页）无浮标，录音必须在这里掐断（裁决 5）：
+      // 硬复位=停止并丢弃，不提交（token 已失效必 401）
+      resetVoiceRecorder()
+    }
   }
 )
 
@@ -42,6 +49,8 @@ onUnmounted(() => {
 
 async function onLogout() {
   await auth.logout()
+  // 登出即硬复位录音（裁决 5）：停止并丢弃，token 已失效提交必 401
+  resetVoiceRecorder()
   // 移动端菜单展开时点退出：菜单/遮罩若不手动收起，
   // 路由切到 /login 后仍挂在页面上，登录页会出现黑色遮罩
   isMobileMenuOpen.value = false
@@ -104,6 +113,9 @@ async function onLogout() {
     <main :class="['app-main', { 'app-main--full': isFullscreen }]">
       <router-view />
     </main>
+
+    <!-- 跨页面录音浮标（组件内部自判渲染条件） -->
+    <VoiceGlobalIndicator />
   </div>
 </template>
 

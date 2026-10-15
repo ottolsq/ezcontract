@@ -1,5 +1,4 @@
 <script setup>
-import { onBeforeUnmount } from 'vue'
 import { Microphone, Loading } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useItineraryStore } from '../../stores/itinerary'
@@ -8,22 +7,21 @@ import { useVoiceRecorder } from '../../composables/useVoiceRecorder'
 const store = useItineraryStore()
 
 // 全局语音入口（悬浮 FAB）：无默认日期，日期全靠嘴上说。
-// 录音/转写/防抖逻辑在 composable；这里只做人员校验与结果跳转。
-const rec = useVoiceRecorder({
-  onResult: () => {
-    store.voiceDialogVisible = true
-  },
-})
+// 单例状态机的控制面板之一——录音状态跨路由存活，卸载不再销毁。
+const rec = useVoiceRecorder()
 
 function onClick() {
   if (!store.selectedArtistId) {
     ElMessage.warning('请先选择或新增一个人员')
     return
   }
-  rec.toggle()
+  rec.toggle({
+    source: 'fab',
+    onResult: () => {
+      store.voiceDialogVisible = true
+    },
+  })
 }
-
-onBeforeUnmount(() => rec.dispose())
 </script>
 
 <template>

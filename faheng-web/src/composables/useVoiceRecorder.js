@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useItineraryStore } from '../stores/itinerary'
 
@@ -277,6 +277,7 @@ export function useVoiceRecorder() {
     stop,
     toggle,
     isBusy: () => phase.value !== 'idle',
+    isRecording: computed(() => phase.value === 'recording'),
   }
 }
 

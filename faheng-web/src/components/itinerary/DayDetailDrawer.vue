@@ -19,25 +19,31 @@ function open() {
 }
 
 // 弹框内语音录入：默认日期 = 点击的日期（语音中提到日期则以后端解析为准，
-// 由 default_date 兜底语义保证）。解析成功后确认框叠加在本弹框之上。
-const rec = useVoiceRecorder({
-  onResult: () => {
-    store.voiceDialogVisible = true
-  },
-  getDefaultDate: () => store.selectedDate,
-})
+// 由 default_date 兜底语义保证；日期在 start 时快照，路由往返不失真）。
+// 解析成功后确认框叠加在本弹框之上。
+const rec = useVoiceRecorder()
 
 function onVoiceClick() {
   if (!store.selectedArtistId) {
     ElMessage.warning('请先选择或新增一个人员')
     return
   }
-  rec.toggle()
+  rec.toggle({
+    source: 'dialog',
+    getDefaultDate: () => store.selectedDate,
+    onResult: () => {
+      store.voiceDialogVisible = true
+    },
+  })
 }
 
-// 关闭当日弹框时停掉进行中的录音并释放麦克风
+// 用户显式关闭弹框（决策 3）：dialog 来源且录音中 → 停止并提交已录内容；
+// 识别中不动（axios 在跑，全局浮标接管展示）。路由切换导致的组件卸载
+// 不走此路径（裁决 1）——录音继续，由浮标承接。
 function onDialogClose() {
-  rec.dispose()
+  if (rec.source.value === 'dialog' && rec.phase.value === 'recording') {
+    rec.stop()
+  }
 }
 
 const editingEvent = ref(null)

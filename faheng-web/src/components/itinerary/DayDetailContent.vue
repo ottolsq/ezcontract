@@ -1,11 +1,21 @@
 <script setup>
-import { ref } from 'vue'
-import { Edit, Delete, Microphone } from '@element-plus/icons-vue'
+import { ref, computed } from 'vue'
+import { Edit, Delete, Microphone, Loading } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import { useItineraryStore } from '../../stores/itinerary'
+import { useVoiceRecorder } from '../../composables/useVoiceRecorder'
 
 const store = useItineraryStore()
 const emit = defineEmits(['add', 'edit', 'remove', 'voice'])
+
+// 单例状态机：弹框语音按钮三态渲染（裁决 2——非本来源 busy 时禁用）
+const rec = useVoiceRecorder()
+const dialogOwnsRecording = computed(
+  () => rec.isBusy() && rec.source.value === 'dialog'
+)
+const otherSourceBusy = computed(
+  () => rec.isBusy() && rec.source.value !== 'dialog'
+)
 
 const eventTypeMap = {
   meeting: '会议',
@@ -51,7 +61,28 @@ async function remove(eventId) {
   <div>
     <div class="detail-actions">
       <el-button type="primary" size="small" :icon="Edit" @click="emit('add')">手动新增</el-button>
-      <el-button size="small" :icon="Microphone" @click="emit('voice')">语音录入</el-button>
+      <el-tooltip
+        content="语音录入进行中"
+        placement="top"
+        :disabled="!otherSourceBusy"
+      >
+        <span class="voice-btn-wrap">
+          <el-button
+            size="small"
+            :icon="Microphone"
+            :type="dialogOwnsRecording && rec.phase.value === 'recording' ? 'danger' : 'default'"
+            :loading="dialogOwnsRecording && rec.phase.value === 'processing'"
+            :disabled="otherSourceBusy"
+            @click="emit('voice')"
+          >
+            <template #icon>
+              <el-icon v-if="dialogOwnsRecording && rec.phase.value === 'recording'"><Loading class="spin" /></el-icon>
+              <el-icon v-else><Microphone /></el-icon>
+            </template>
+            {{ dialogOwnsRecording && rec.phase.value === 'recording' ? '正在听·点击结束' : dialogOwnsRecording && rec.phase.value === 'processing' ? '识别中…' : '语音录入' }}
+          </el-button>
+        </span>
+      </el-tooltip>
     </div>
     <div v-if="store.dailyEvents.length === 0" class="empty-state">
       <p>当日暂无行程</p>
@@ -130,6 +161,22 @@ async function remove(eventId) {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+  align-items: center;
+}
+
+/* el-button 禁用态包一层 span 才能挂 tooltip（disabled 按钮不触发鼠标事件） */
+.voice-btn-wrap {
+  display: inline-flex;
+}
+
+.spin {
+  animation: voice-rotate 1s linear infinite;
+}
+
+@keyframes voice-rotate {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .empty-state {

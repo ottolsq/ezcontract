@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 import { useItineraryStore } from '../../stores/itinerary'
 
 const store = useItineraryStore()
+const emit = defineEmits(['date-click'])
 
 const WEEK_DAYS = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -63,6 +64,7 @@ function eventCount(date) {
 function selectDate(date) {
   if (!date) return
   store.fetchDailyEvents(date)
+  emit('date-click', date)
 }
 </script>
 

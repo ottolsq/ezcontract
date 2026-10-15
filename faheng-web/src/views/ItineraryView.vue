@@ -36,7 +36,7 @@ onMounted(async () => {
     </div>
 
     <template v-else>
-      <ItineraryCalendar />
+      <ItineraryCalendar @date-click="detailRef?.open()" />
     </template>
 
     <VoiceInputButton />

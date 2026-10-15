@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useItineraryStore } from '../../stores/itinerary'
 import EventForm from './EventForm.vue'
@@ -7,14 +7,6 @@ import DayDetailContent from './DayDetailContent.vue'
 
 const store = useItineraryStore()
 const visible = ref(false)
-const isMobile = ref(false)
-
-onMounted(() => {
-  isMobile.value = window.innerWidth <= 768
-  window.addEventListener('resize', () => {
-    isMobile.value = window.innerWidth <= 768
-  })
-})
 
 const title = computed(() => {
   if (!store.selectedDate) return '当日行程'
@@ -28,15 +20,6 @@ function open() {
 function close() {
   visible.value = false
 }
-
-watch(
-  () => store.dailyEvents,
-  () => {
-    if (store.dailyEvents.length > 0 && !visible.value) {
-      visible.value = true
-    }
-  }
-)
 
 const editingEvent = ref(null)
 const editDialogVisible = ref(false)
@@ -108,36 +91,19 @@ async function removeEvent(eventId) {
   await store.deleteEvent(eventId)
   await store.fetchDailyEvents(store.selectedDate)
   await store.fetchMonthEvents()
-  if (store.dailyEvents.length === 0) {
-    close()
-  }
+  // 删光当日行程后弹框保持打开，显示「当日暂无行程」
 }
 
-defineExpose({ open })
+defineExpose({ open, close })
 </script>
 
 <template>
   <div>
-    <!-- 桌面端抽屉 -->
-    <el-drawer
-      v-if="!isMobile"
-      v-model="visible"
-      :title="title"
-      direction="rtl"
-      size="640px"
-      :close-on-click-modal="true"
-      class="day-detail-drawer"
-    >
-      <DayDetailContent @add="startAdd" @edit="startEdit" @remove="removeEvent" />
-    </el-drawer>
-
-    <!-- 移动端弹窗 -->
+    <!-- 当日行程弹框（桌面/移动统一） -->
     <el-dialog
-      v-else
       v-model="visible"
       :title="title"
-      width="92%"
-      top="18vh"
+      width="640px"
       :close-on-click-modal="true"
       class="day-detail-dialog"
     >
@@ -174,10 +140,15 @@ defineExpose({ open })
 </template>
 
 <style scoped>
+/* 弹框内行程列表滚动区：限制高度避免长列表撑爆视口 */
 :deep(.day-detail-dialog .el-dialog__body) {
-  padding-top: 10%;
-  padding-bottom: 16px;
-  max-height: calc(70vh - 120px);
+  max-height: calc(100vh - 200px);
   overflow-y: auto;
+}
+
+@media (max-width: 768px) {
+  :deep(.day-detail-dialog .el-dialog) {
+    width: 92% !important;
+  }
 }
 </style>

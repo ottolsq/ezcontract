@@ -207,7 +207,7 @@ export const useItineraryStore = defineStore('itinerary', {
       }
     },
 
-    async parseVoiceAudio(blob, filename, defaultDate) {
+    async parseVoiceAudio(blob, filename, defaultDate, defaultArtistId) {
       this.voiceSaving = true
       this.voiceText = ''
       try {
@@ -216,7 +216,8 @@ export const useItineraryStore = defineStore('itinerary', {
         // 后端按文件名后缀识别格式，故把原始文件名一并带上
         const ext = (blob.type.split('/')[1] || 'webm').split(';')[0]
         form.append('file', blob, filename || `voice.${ext}`)
-        form.append('default_artist_id', this.selectedArtistId)
+        // 录音发起时快照优先（录音中路由往返后 selectedArtistId 可能已变）
+        form.append('default_artist_id', defaultArtistId ?? this.selectedArtistId)
         // 当日弹框语音录入：未提日期时以点击的日期兜底（悬浮按钮不传）
         if (defaultDate) form.append('default_date', defaultDate)
         const { data } = await api.post('/itinerary/parse-voice-audio', form, {

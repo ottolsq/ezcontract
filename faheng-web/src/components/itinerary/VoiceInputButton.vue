@@ -158,7 +158,9 @@ async function start() {
 
     if (!blob.size) {
       phase.value = 'idle'
-      ElMessage.warning('未能识别到语音内容，请重试')
+      // 录音数据为空是本地问题（未授权/极短）；真正录到内容但 ASR
+      // 识别为空的提示由后端 422 返回，避免这里弹两次
+      ElMessage.warning('未能录到声音，请检查麦克风权限后重试')
       return
     }
     await processBlob(blob)
@@ -174,14 +176,10 @@ async function start() {
   } catch {
     mediaRecorder.start()
   }
-
-  // 10 秒后自动停止录音（避免一直占用麦克风）
-  stopTimer = setTimeout(() => {
-    forceStopRecording()
-  }, 10000)
+  // 不设自动停止：语音内容长短不一，由用户点按结束；
+  // 转写接口上限 20MB，opus 低码率录音远达不到，无需代管
 }
 
-/** 兜底通道：系统录音器返回的文件 → 直接转写（无录音过程，仅占用 processing 阶段） */
 /** 兜底通道：系统录音器返回的文件 → 直接转写（无录音过程，仅占用 processing 阶段） */
 async function onFileChange(e) {
   const file = e.target.files?.[0]

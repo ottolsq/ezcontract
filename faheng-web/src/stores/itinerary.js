@@ -197,7 +197,8 @@ export const useItineraryStore = defineStore('itinerary', {
         }))
         return data
       } catch (e) {
-        ElMessage.error(e.response?.data?.detail || '语音解析失败')
+        // axios 拦截器已对带状态码的错误弹过提示；这里只兜底网络级错误
+        if (!e.response) ElMessage.error('语音解析失败：网络异常')
         throw e
       } finally {
         this.voiceSaving = false
@@ -224,7 +225,8 @@ export const useItineraryStore = defineStore('itinerary', {
         }))
         return data
       } catch (e) {
-        ElMessage.error(e.response?.data?.detail || '语音识别失败')
+        // axios 拦截器已对带状态码的错误弹过提示；这里只兜底网络级错误
+        if (!e.response) ElMessage.error('语音识别失败：网络异常')
         throw e
       } finally {
         this.voiceSaving = false

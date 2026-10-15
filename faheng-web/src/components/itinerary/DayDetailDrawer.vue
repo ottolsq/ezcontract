@@ -112,7 +112,7 @@ async function removeEvent(eventId) {
   // 删光当日行程后弹框保持打开，显示「当日暂无行程」
 }
 
-defineExpose({ open, close })
+defineExpose({ open })
 </script>
 
 <template>

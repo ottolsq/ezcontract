@@ -64,6 +64,10 @@ export function useVoiceRecorder({ onResult } = {}) {
     clearTimeout(stopTimer)
     stopTimer = null
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      // 丢弃式停止：先摘掉 onstop，避免 dispose（关弹框/卸载）路径把
+      // 用户已放弃的录音继续上传转写，并异步回踩 phase 造成状态竞态。
+      // 正常点按结束走 forceStopRecording → stop() → onstop，不受影响。
+      mediaRecorder.onstop = null
       try {
         mediaRecorder.stop()
       } catch {

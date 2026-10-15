@@ -50,8 +50,8 @@ async function remove(eventId) {
 <template>
   <div>
     <div class="detail-actions">
-      <el-button type="primary" size="small" :icon="Edit" @click="emit('add')">手动新增当日行程</el-button>
-      <el-button size="small" :icon="Microphone" @click="emit('voice')">语音录入当日行程</el-button>
+      <el-button type="primary" size="small" :icon="Edit" @click="emit('add')">手动新增</el-button>
+      <el-button size="small" :icon="Microphone" @click="emit('voice')">语音录入</el-button>
     </div>
     <div v-if="store.dailyEvents.length === 0" class="empty-state">
       <p>当日暂无行程</p>

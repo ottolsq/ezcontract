@@ -101,7 +101,7 @@ onBeforeUnmount(() => rec.dispose())
 @keyframes pulse {
   0% {
     transform: scale(1);
-    opacity: 0.6;
+    opacity: 0.5;
   }
   100% {
     transform: scale(1.6);
@@ -111,13 +111,11 @@ onBeforeUnmount(() => rec.dispose())
 
 .tip {
   font-size: 12px;
-  color: #66758a;
+  color: #2459a9;
   background: #fff;
-  border: 1px solid #e4e9f2;
+  padding: 2px 8px;
   border-radius: 999px;
-  padding: 2px 10px;
-  white-space: nowrap;
-  box-shadow: 0 2px 8px rgba(36, 89, 169, 0.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 @media (max-width: 768px) {
@@ -127,18 +125,18 @@ onBeforeUnmount(() => rec.dispose())
   }
 
   .btn {
-    width: 48px;
-    height: 48px;
-    font-size: 20px;
+    width: 64px;
+    height: 64px;
+    font-size: 28px;
   }
 
   .pulse-ring {
-    width: 48px;
-    height: 48px;
+    width: 64px;
+    height: 64px;
   }
 
   .tip {
-    display: none;
+    font-size: 13px;
   }
 }
 </style>

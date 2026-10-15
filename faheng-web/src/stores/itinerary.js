@@ -204,13 +204,15 @@ export const useItineraryStore = defineStore('itinerary', {
       }
     },
 
-    async parseVoiceAudio(blob) {
+    async parseVoiceAudio(blob, filename) {
       this.voiceSaving = true
       this.voiceText = ''
       try {
         const form = new FormData()
+        // 手机录音 App 产出的 mime 常缺失或不准（如 iPhone 的 audio/x-m4a），
+        // 后端按文件名后缀识别格式，故把原始文件名一并带上
         const ext = (blob.type.split('/')[1] || 'webm').split(';')[0]
-        form.append('file', blob, `voice.${ext}`)
+        form.append('file', blob, filename || `voice.${ext}`)
         form.append('default_artist_id', this.selectedArtistId)
         const { data } = await api.post('/itinerary/parse-voice-audio', form, {
           headers: { 'Content-Type': 'multipart/form-data' },

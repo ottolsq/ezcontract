@@ -1,4 +1,5 @@
 """法衡 AI · 企业多智能体工作台 — API 入口（Demo）"""
+import logging
 from pathlib import Path
 
 from fastapi import Depends, FastAPI
@@ -6,9 +7,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.config import settings
-from app.llm.client import chat_text
-from app.routers import auth, compliance, draft, itinerary, notifications, review
+# uvicorn 只配置自己的 logger，不管 root；不配这条，业务代码的
+# INFO 日志（如语音识别结果）在控制台一条都不会显示
+logging.basicConfig(level=logging.INFO)
+
+from app.config import settings  # noqa: E402
+from app.llm.client import chat_text  # noqa: E402
+from app.routers import auth, compliance, draft, itinerary, notifications, review  # noqa: E402
 
 app = FastAPI(title="法衡 AI 企业多智能体工作台 API (Demo)", version="0.1.0")
 

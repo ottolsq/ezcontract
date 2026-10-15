@@ -35,7 +35,7 @@ def get_client() -> AsyncOpenAI:
 
 
 class LLMFormatError(Exception):
-    """LLM 输出经多次尝试仍无法解析为目标 schema"""
+    """LLM 输出经多次尝试仍无法解析为目标 schema；也用于网关异常响应（choices 为空）"""
 
 
 def _clean(raw: str) -> str:
@@ -96,23 +96,45 @@ def _salvage_array(cleaned: str) -> list | None:
         return None
 
 
+def _ensure_choices(resp) -> None:
+    """网关异常防御：部分网关（DeepSeek 等）偶发 HTTP 200 但 choices 为 null，
+    直接下标访问会 TypeError 裸崩成 500。这里转成带原始响应的
+    LLMFormatError，chat_json 按既有逻辑重试，耗尽后抛给上层转 422。
+    """
+    if not resp.choices:
+        raw = ""
+        try:
+            raw = resp.model_dump_json()[:500]
+        except Exception:  # noqa: BLE001
+            raw = str(resp)[:500]
+        raise LLMFormatError(f"LLM 网关返回空 choices（原始响应：{raw}）")
+
+
 async def chat_text(
     messages: list[dict],
     temperature: float = 0.0,
     max_tokens: int = 4000,
     strip_emoji: bool = True,
+    reasoning_effort: str | None = None,
 ) -> str:
     """原始文本对话（health 探活等场景）。
 
     部分国产模型会在正文里夹 emoji/零宽字符，Windows GBK 控制台打印
     或后续 JSON 解析都会出问题，默认剥离。
+    reasoning_effort：交互场景（语音录入等）传 "low" 跳过思维链等待，
+    仅 DeepSeek 系网关识别；为 None 时不传参，兼容其他网关。
     """
+    kwargs: dict = {}
+    if reasoning_effort:
+        kwargs["reasoning_effort"] = reasoning_effort
     resp = await get_client().chat.completions.create(
         model=settings.LLM_MODEL,
         messages=messages,  # type: ignore[arg-type]
         temperature=temperature,
         max_tokens=max_tokens,
+        **kwargs,
     )
+    _ensure_choices(resp)
     text = resp.choices[0].message.content or ""
     if strip_emoji:
         text = "".join(ch for ch in text if ord(ch) >= 32 and not (0x1F000 <= ord(ch) <= 0x1FAFF))
@@ -125,14 +147,19 @@ async def chat_json(
     temperature: float = 0.0,
     max_tokens: int = 3000,
     salvage: bool = True,
+    reasoning_effort: str | None = None,
 ) -> T:
     """调用 LLM 并解析为 pydantic schema。
 
     - 失败自动重试（把上次错误原因附进重试消息）
     - salvage=True 且 schema 含名为 risks 的 list 字段时启用截断抢救
+    - reasoning_effort：交互场景传 "low" 跳过思维链等待（同 chat_text）
     """
     current_messages = list(messages)
     last_error = ""
+    kwargs: dict = {}
+    if reasoning_effort:
+        kwargs["reasoning_effort"] = reasoning_effort
 
     for attempt in range(1, MAX_ATTEMPTS + 1):
         resp = await get_client().chat.completions.create(
@@ -140,7 +167,16 @@ async def chat_json(
             messages=current_messages,  # type: ignore[arg-type]
             temperature=temperature,
             max_tokens=max_tokens,
+            **kwargs,
         )
+        try:
+            _ensure_choices(resp)
+        except LLMFormatError as e:
+            # 网关瞬时异常（choices 为空）：附上原因走重试，不直接炸
+            last_error = str(e)
+            if attempt < MAX_ATTEMPTS:
+                continue
+            raise LLMFormatError(f"LLM 输出解析失败（已尝试 {MAX_ATTEMPTS} 次）：{last_error}") from None
         choice = resp.choices[0]
         content = choice.message.content or ""
         finish_reason = getattr(choice, "finish_reason", None)

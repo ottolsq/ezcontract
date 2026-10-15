@@ -1,6 +1,7 @@
 """人员行程模块业务层（SQLite，复用 compliance_db）"""
 from __future__ import annotations
 
+import logging
 import re
 import uuid
 from datetime import date, datetime, timedelta
@@ -21,6 +22,8 @@ from app.schemas.itinerary import (
     VoiceParseIn,
 )
 from app.services.compliance_db import conn_ctx, row_to_dict
+
+logger = logging.getLogger(__name__)
 
 
 EVENT_TYPE_MAP = {
@@ -189,6 +192,7 @@ async def parse_voice_audio(
 ) -> dict:
     """浏览器录音 → ASR 转文字 → LLM 解析为行程草稿。"""
     text = await transcribe(data, mime=mime, filename=filename)
+    logger.info("语音识别结果（%d 字符）：%s", len(text), text)
     if not text.strip():
         raise HTTPException(422, "未能识别到语音内容，请靠近麦克风重试")
     out = await parse_voice(VoiceParseIn(text=text, default_artist_id=default_artist_id))
@@ -244,6 +248,8 @@ async def parse_voice(body: VoiceParseIn) -> dict:
             temperature=0.0,
             max_tokens=4000,
             salvage=True,
+            # 语音录入是交互场景，用户在等结果；跳过思维链，秒级返回
+            reasoning_effort="low",
         )
     except LLMFormatError as e:
         raise HTTPException(422, f"AI 解析失败：{e}") from None

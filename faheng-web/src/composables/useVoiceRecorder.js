@@ -102,13 +102,14 @@ function pickMimeType() {
   return ''
 }
 
-/** 转写 + 解析共用出口：上传用 start 时的快照（日期/人员），成功后回调快照 onResult */
+/** 转写 + 解析共用出口：上传用 start 时的快照（日期/人员），成功后回调快照 onResult。
+ * 解析出 0 条行程时不弹确认框（onResult 不调）——空框只会困惑用户 */
 async function processBlob(blob, filename) {
   phase.value = 'processing'
   const snap = _snap
   try {
-    await store().parseVoiceAudio(blob, filename, snap?.date, snap?.artistId)
-    snap?.onResult?.()
+    const out = await store().parseVoiceAudio(blob, filename, snap?.date, snap?.artistId)
+    if ((out?.events || []).length > 0) snap?.onResult?.()
     _snap = null
   } catch {
     // error handled in store
@@ -119,26 +120,55 @@ async function processBlob(blob, filename) {
   }
 }
 
-/** 兜底通道：动态建 <input type=file capture>，选完文件直接上传转写（走快照） */
+/** 软复位（放弃发起但未产生录音）：状态归零，不动冷却锁 */
+function _resetSoft() {
+  _snap = null
+  source.value = null
+  startedAt.value = 0
+  phase.value = 'idle'
+}
+
+/** 兜底通道：动态建 <input type=file capture>，选完文件直接上传转写（走快照）。
+ * 取消选择（onchange 空 files / cancel 事件）必须软复位——否则 phase 卡死
+ * starting，所有录音入口被永久锁死直到刷新页面 */
 function openFilePicker() {
   const input = document.createElement('input')
   input.type = 'file'
   input.accept = 'audio/*'
   input.capture = ''
   input.style.display = 'none'
+  let done = false
+
+  const cleanup = () => {
+    done = true
+    input.remove()
+  }
+
   input.onchange = async (e) => {
+    if (done) return
+    cleanup()
     const file = e.target.files?.[0]
-    document.body.removeChild(input)
-    if (!file) return
+    if (!file) {
+      _resetSoft() // 部分浏览器取消也走 onchange（空 files）
+      return
+    }
     // 文件大小与后端 _MAX_AUDIO_BYTES 对齐
     if (file.size > 20 * 1024 * 1024) {
       ElMessage.warning('录音文件过大（超过 20MB），请缩短录音时长')
-      _snap = null
-      phase.value = 'idle'
+      _resetSoft()
       return
     }
     await processBlob(file, file.name)
   }
+
+  // 现代浏览器取消选择触发 cancel 事件（Firefox 部分版本不支持，
+  // 但其移动端走 getUserMedia 路径，兜底主要面向移动端系统录音器）
+  input.oncancel = () => {
+    if (done) return
+    cleanup()
+    _resetSoft()
+  }
+
   document.body.appendChild(input)
   input.click()
 }

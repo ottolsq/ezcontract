@@ -41,7 +41,7 @@ const today = new Date().toLocaleDateString('zh-CN')
       </div>
 
       <div class="card" @click="router.push('/itinerary')">
-        <div class="card-icon">🎤</div>
+        <div class="card-icon">📅</div>
         <h2>人员行程</h2>
         <p>语音录入人员会议、演出、活动等安排，按日历查看，支持人工确认与编辑。</p>
         <div class="flow">语音 → 解析 → 日历/表格</div>

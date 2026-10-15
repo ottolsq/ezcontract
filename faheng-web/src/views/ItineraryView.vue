@@ -30,7 +30,7 @@ onMounted(async () => {
     <div v-if="!store.artists.length" class="empty-state">
       <el-empty description="暂无人员，请先新增人员">
         <template #image>
-          <div class="empty-icon">🎤</div>
+          <div class="empty-icon">📅</div>
         </template>
       </el-empty>
     </div>

@@ -128,14 +128,31 @@ function _resetSoft() {
   phase.value = 'idle'
 }
 
-/** 兜底通道：动态建 <input type=file capture>，选完文件直接上传转写（走快照）。
+/** 兜底通道：动态建 <input type=file>，选完文件直接上传转写（走快照）。
+ *
+ * 【已知限制（浏览器安全模型，代码无法绕过）】公网 IP 裸 HTTP 部署时
+ * getUserMedia 不可用（navigator.mediaDevices 为 undefined），只能走
+ * 本兜底。根治 = 部署 HTTPS（域名 + Let's Encrypt 或 Cloudflare Tunnel）。
+ * 首次进入兜底时向用户说明，避免「为什么行为不一样」的困惑。
+ *
  * 取消选择（onchange 空 files / cancel 事件）必须软复位——否则 phase 卡死
- * starting，所有录音入口被永久锁死直到刷新页面 */
+ * starting，所有录音入口被永久锁死直到刷新页面。
+ *
+ * 注意：不设 input.capture 属性。iOS Safari 对 capture=""（或任意 capture）
+ * 的实现不遵守「accept 决定采集类型」，会弹出相机选择器而非录音/文件；
+ * 只留 accept="audio/*" 时 iOS 打开文件选择器（含「录音」入口），行为正确。 */
+let _fallbackHintShown = false
+
 function openFilePicker() {
+  if (!_fallbackHintShown) {
+    _fallbackHintShown = true
+    ElMessage.info(
+      '当前为 HTTP 连接，浏览器录音不可用，已切换为录音文件上传；部署 HTTPS 后可直接录音'
+    )
+  }
   const input = document.createElement('input')
   input.type = 'file'
   input.accept = 'audio/*'
-  input.capture = ''
   input.style.display = 'none'
   let done = false
 

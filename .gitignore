@@ -34,3 +34,5 @@ performancePlan.md
 *.swp
 .DS_Store
 Thumbs.db
+.superpowers/
+docs/

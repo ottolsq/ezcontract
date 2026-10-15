@@ -1,4 +1,4 @@
-"""法衡 AI · 企业多智能体工作台 — API 入口（Demo）"""
+"""🌌 星河 · 企业多智能体工作台 — API 入口（Demo）"""
 import logging
 from pathlib import Path
 
@@ -16,7 +16,7 @@ from app.config import settings  # noqa: E402
 from app.llm.client import LLMConfigError, chat_text  # noqa: E402
 from app.routers import auth, compliance, draft, itinerary, notifications, review  # noqa: E402
 
-app = FastAPI(title="法衡 AI 企业多智能体工作台 API (Demo)", version="0.1.0")
+app = FastAPI(title="星河 · 企业多智能体工作台 API (Demo)", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,

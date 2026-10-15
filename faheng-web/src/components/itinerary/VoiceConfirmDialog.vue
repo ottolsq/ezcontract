@@ -49,7 +49,7 @@ async function confirm() {
   // 校验必填
   const invalid = store.voiceParsedEvents.some((ev) => !ev.artist_id || !ev.event_date || !ev.title)
   if (invalid) {
-    ElMessage.warning('请补全每条行程的艺人、日期和事项')
+    ElMessage.warning('请补全每条行程的人员、日期和事项')
     return
   }
   const payload = store.voiceParsedEvents.map((ev) => ({
@@ -91,7 +91,7 @@ async function confirm() {
     <div class="hint">
       <p>请核对语音识别结果，修改后点击确认保存。</p>
       <p class="fields-hint">
-        必要字段：<b>艺人</b>、<b>日期</b>、<b>行程事项</b>；可选字段：时间、地点、类型、摘要、对接人、物料、备注
+        必要字段：<b>人员</b>、<b>日期</b>、<b>行程事项</b>；可选字段：时间、地点、类型、摘要、对接人、物料、备注
       </p>
     </div>
 
@@ -111,8 +111,8 @@ async function confirm() {
         </div>
         <div class="form-grid">
           <div class="form-item">
-            <label class="required">艺人</label>
-            <el-select v-model="ev.artist_id" placeholder="选择艺人" size="small" style="width: 100%">
+            <label class="required">人员</label>
+            <el-select v-model="ev.artist_id" placeholder="选择人员" size="small" style="width: 100%">
               <el-option
                 v-for="artist in store.artists"
                 :key="artist.id"

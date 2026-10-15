@@ -106,7 +106,7 @@ async function start() {
   if (phase.value !== 'idle' || Date.now() < lockUntil) return
 
   if (!store.selectedArtistId) {
-    ElMessage.warning('请先选择或新增一个艺人')
+    ElMessage.warning('请先选择或新增一个人员')
     return
   }
 
@@ -187,7 +187,7 @@ async function onFileChange(e) {
   if (!file) return
 
   if (!store.selectedArtistId) {
-    ElMessage.warning('请先选择或新增一个艺人')
+    ElMessage.warning('请先选择或新增一个人员')
     return
   }
   // 文件大小与后端 _MAX_AUDIO_BYTES 对齐

@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 class ItineraryEventLLM(BaseModel):
     """LLM 从语音文本中抽取的单条行程"""
 
-    artist_name: str = Field(default="", description="艺人姓名；未提及则留空")
+    artist_name: str = Field(default="", description="人员姓名；未提及则留空")
     event_date: str = Field(
         default="", description="行程日期，YYYY-MM-DD；未提及则留空"
     )
@@ -28,7 +28,7 @@ class ItineraryEventLLM(BaseModel):
 
 
 class ItineraryParseOut(BaseModel):
-    """LLM 解析输出：可能一次语音包含多个艺人的行程"""
+    """LLM 解析输出：可能一次语音包含多个人员的行程"""
 
     events: list[ItineraryEventLLM] = Field(default_factory=list)
 
@@ -77,7 +77,7 @@ class EventUpdateIn(BaseModel):
 
 class VoiceParseIn(BaseModel):
     text: str
-    default_artist_id: str | None = None  # 当前选中艺人兜底
+    default_artist_id: str | None = None  # 当前选中人员兜底
 
 
 class ConfirmIn(BaseModel):

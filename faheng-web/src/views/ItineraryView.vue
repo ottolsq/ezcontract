@@ -22,13 +22,13 @@ onMounted(async () => {
 <template>
   <div class="page itinerary-page">
     <div class="page-head">
-      <h1>艺人行程</h1>
+      <h1>人员行程</h1>
     </div>
 
     <ArtistSelector />
 
     <div v-if="!store.artists.length" class="empty-state">
-      <el-empty description="暂无艺人，请先新增艺人">
+      <el-empty description="暂无人员，请先新增人员">
         <template #image>
           <div class="empty-icon">🎤</div>
         </template>

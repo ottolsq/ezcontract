@@ -1,4 +1,4 @@
-"""法衡 AI · 企业多智能体工作台 — API（Demo）"""
+"""🌌 星河 · 企业多智能体工作台 — API（Demo）"""
 import uvicorn
 
 if __name__ == "__main__":

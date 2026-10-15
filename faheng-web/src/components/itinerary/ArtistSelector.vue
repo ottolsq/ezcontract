@@ -10,7 +10,7 @@ const addDialogVisible = ref(false)
 
 const selectedLabel = computed(() => {
   const artist = store.selectedArtist
-  return artist ? artist.name : '选择艺人'
+  return artist ? artist.name : '选择人员'
 })
 
 async function openAddDialog() {
@@ -28,7 +28,7 @@ async function submitAdd() {
 
 async function remove(artist) {
   try {
-    await ElMessageBox.confirm(`删除艺人「${artist.name}」将同时删除其全部行程，确定吗？`, '确认删除', {
+    await ElMessageBox.confirm(`删除人员「${artist.name}」将同时删除其全部行程，确定吗？`, '确认删除', {
       confirmButtonText: '删除',
       cancelButtonText: '取消',
       type: 'warning',
@@ -47,14 +47,14 @@ async function remove(artist) {
         <span class="dot" :style="{ background: store.selectedArtist?.color || '#2459a9' }"></span>
         <el-select
           :model-value="store.selectedArtistId"
-          placeholder="选择艺人"
+          placeholder="选择人员"
           size="default"
           popper-class="artist-select-dropdown"
           style="width: 220px"
           @update:model-value="store.selectArtist"
         >
           <template #header>
-            <div class="dropdown-header">选择艺人</div>
+            <div class="dropdown-header">选择人员</div>
           </template>
           <el-option
             v-for="artist in store.artists"
@@ -73,21 +73,21 @@ async function remove(artist) {
       </div>
 
       <el-button type="primary" plain size="small" :icon="Plus" @click="openAddDialog">
-        新增艺人
+        新增人员
       </el-button>
     </div>
 
     <div v-if="store.selectedArtist" class="current-artist">
-      当前艺人：<b :style="{ color: store.selectedArtist.color }">{{ store.selectedArtist.name }}</b>
+      当前人员：<b :style="{ color: store.selectedArtist.color }">{{ store.selectedArtist.name }}</b>
     </div>
 
     <el-dialog
       v-model="addDialogVisible"
-      title="新增艺人"
+      title="新增人员"
       width="360px"
       :close-on-click-modal="false"
     >
-      <el-input v-model="addName" placeholder="请输入艺人姓名" @keyup.enter="submitAdd" />
+      <el-input v-model="addName" placeholder="请输入人员姓名" @keyup.enter="submitAdd" />
       <template #footer>
         <el-button size="small" @click="addDialogVisible = false">取消</el-button>
         <el-button type="primary" size="small" @click="submitAdd">确定</el-button>

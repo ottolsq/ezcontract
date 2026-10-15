@@ -298,14 +298,14 @@ def build_compliance_prompt(
 # ── 人员行程语音解析 ──
 
 ITINERARY_SYSTEM = (
-    "你是艺人行程解析助手。从用户的语音描述中提取结构化行程信息。"
+    "你是人员行程解析助手。从用户的语音描述中提取结构化行程信息。"
     "只输出 JSON，不输出任何解释、markdown 代码块或其他文本。"
 )
 
 ITINERARY_SCHEMA_HINT = """{
   "events": [
     {
-      "artist_name": "艺人姓名；未提及则留空",
+      "artist_name": "人员姓名；未提及则留空",
       "event_date": "YYYY-MM-DD；未提及则留空",
       "time_range": "时间段，如 '14:00-16:00' 或 '下午2点到4点'；未提及则留空",
       "title": "行程事项，如 '品牌发布会'",
@@ -330,13 +330,13 @@ def build_itinerary_prompt(raw_text: str) -> list[dict]:
         f"## 今天日期\n今天是 {today}。如果用户只说「几月几号」没提年份，请使用今年的年份（{date.today().year}）。",
         (
             "## 任务\n"
-            "从语音原文中提取 1 条或多条艺人行程。每个行程对应一个事件对象。"
-            "如果原文包含多个艺人或多个日期，请拆分成多个事件。输出 JSON：\n"
+            "从语音原文中提取 1 条或多条人员行程。每个行程对应一个事件对象。"
+            "如果原文包含多个人员或多个日期，请拆分成多个事件。输出 JSON：\n"
             + ITINERARY_SCHEMA_HINT
         ),
         (
             "## 字段说明\n"
-            "- artist_name: 艺人姓名；如果原文没提到就留空字符串，不要编造。\n"
+            "- artist_name: 人员姓名；如果原文没提到就留空字符串，不要编造。\n"
             "- event_date: 尽量输出 YYYY-MM-DD。如果只说「几月几号」没提年份，按今年处理。\n"
             "- time_range: 保留用户原描述或整理为 HH:MM-HH:MM；没有就留空。\n"
             "- title: 行程事项名称，必填。\n"

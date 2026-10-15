@@ -8,7 +8,7 @@ const today = new Date().toLocaleDateString('zh-CN')
 <template>
   <div class="home">
     <header class="hero">
-      <div class="brand">⚖️ 法衡 AI</div>
+      <div class="brand">🌌 星河</div>
       <h1>企业多智能体工作台</h1>
       <!-- 
       <p class="lead">
@@ -42,8 +42,8 @@ const today = new Date().toLocaleDateString('zh-CN')
 
       <div class="card" @click="router.push('/itinerary')">
         <div class="card-icon">🎤</div>
-        <h2>艺人行程</h2>
-        <p>语音录入艺人会议、演出、活动等安排，按日历查看，支持人工确认与编辑。</p>
+        <h2>人员行程</h2>
+        <p>语音录入人员会议、演出、活动等安排，按日历查看，支持人工确认与编辑。</p>
         <div class="flow">语音 → 解析 → 日历/表格</div>
       </div>
 

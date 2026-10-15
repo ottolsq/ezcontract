@@ -14,8 +14,8 @@ function update(field, value) {
 <template>
   <div class="form-grid">
     <div class="form-item">
-      <label class="required">艺人</label>
-      <el-select :modelValue="modelValue.artist_id" @update:modelValue="v => update('artist_id', v)" placeholder="选择艺人" size="small" style="width: 100%">
+      <label class="required">人员</label>
+      <el-select :modelValue="modelValue.artist_id" @update:modelValue="v => update('artist_id', v)" placeholder="选择人员" size="small" style="width: 100%">
         <el-option v-for="a in artists" :key="a.id" :label="a.name" :value="a.id" />
       </el-select>
     </div>

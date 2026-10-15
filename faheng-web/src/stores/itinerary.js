@@ -76,7 +76,7 @@ export const useItineraryStore = defineStore('itinerary', {
           this.selectedArtistId = this.artists[0].id
         }
       } catch (e) {
-        ElMessage.error('加载艺人列表失败')
+        ElMessage.error('加载人员列表失败')
       }
     },
 
@@ -86,10 +86,10 @@ export const useItineraryStore = defineStore('itinerary', {
         const { data } = await api.post('/itinerary/artists', { name, color })
         this.artists.unshift(data)
         this.selectedArtistId = data.id
-        ElMessage.success(`已添加艺人 ${data.name}`)
+        ElMessage.success(`已添加人员 ${data.name}`)
         return data
       } catch (e) {
-        ElMessage.error(e.response?.data?.detail || '添加艺人失败')
+        ElMessage.error(e.response?.data?.detail || '添加人员失败')
         throw e
       }
     },
@@ -101,9 +101,9 @@ export const useItineraryStore = defineStore('itinerary', {
         if (this.selectedArtistId === artistId) {
           this.selectedArtistId = this.artists[0]?.id || ''
         }
-        ElMessage.success('已删除艺人')
+        ElMessage.success('已删除人员')
       } catch (e) {
-        ElMessage.error(e.response?.data?.detail || '删除艺人失败')
+        ElMessage.error(e.response?.data?.detail || '删除人员失败')
       }
     },
 

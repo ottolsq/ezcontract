@@ -142,13 +142,13 @@ def _detect_event_type(title: str, summary: str) -> str:
     return "other"
 
 
-# ── 艺人 CRUD ──
+# ── 人员 CRUD ──
 
 
 def create_artist(body: ArtistCreateIn) -> dict:
     name = body.name.strip()
     if not name:
-        raise HTTPException(400, "艺人姓名不能为空")
+        raise HTTPException(400, "人员姓名不能为空")
     artist_id = _new_id()
     try:
         with conn_ctx() as conn:
@@ -158,7 +158,7 @@ def create_artist(body: ArtistCreateIn) -> dict:
             )
     except Exception as e:  # noqa: BLE001
         if "UNIQUE" in str(e):
-            raise HTTPException(400, f"艺人 '{name}' 已存在") from None
+            raise HTTPException(400, f"人员 '{name}' 已存在") from None
         raise
     return {"id": artist_id, "name": name, "color": body.color or "#2459a9"}
 
@@ -178,7 +178,7 @@ def delete_artist(artist_id: str) -> dict:
             "SELECT id FROM itinerary_artists WHERE id=?", (artist_id,)
         ).fetchone()
         if row is None:
-            raise HTTPException(404, "艺人不存在")
+            raise HTTPException(404, "人员不存在")
         conn.execute("DELETE FROM itinerary_events WHERE artist_id=?", (artist_id,))
         conn.execute("DELETE FROM itinerary_artists WHERE id=?", (artist_id,))
     return {"ok": True}
@@ -202,7 +202,7 @@ async def parse_voice_audio(
 def _resolve_artist(
     name: str, default_artist_id: str | None = None
 ) -> tuple[str | None, str | None]:
-    """根据艺人名查找或创建艺人，返回 (artist_id, artist_name)。"""
+    """根据人员名查找或创建人员，返回 (artist_id, artist_name)。"""
     name = name.strip() if name else ""
     with conn_ctx() as conn:
         # 1. 优先完全匹配
@@ -213,7 +213,7 @@ def _resolve_artist(
             ).fetchone()
             if row:
                 return row["id"], row["name"]
-        # 2. 使用默认艺人
+        # 2. 使用默认人员
         if default_artist_id:
             row = conn.execute(
                 "SELECT id, name FROM itinerary_artists WHERE id=?",
@@ -228,7 +228,7 @@ def _artist_upsert(name: str) -> tuple[str, str]:
     """语音中提到新人名时自动创建；返回 (artist_id, artist_name)。"""
     name = name.strip() if name else ""
     if not name:
-        raise HTTPException(400, "未能识别艺人姓名")
+        raise HTTPException(400, "未能识别人员姓名")
     artist_id, artist_name = _resolve_artist(name)
     if artist_id:
         return artist_id, artist_name
@@ -423,16 +423,16 @@ def confirm_events(body: ConfirmIn) -> dict:
     created = []
     for ev in body.events:
         artist_id = ev.artist_id
-        # 如果 artist_id 为空或不存在的艺人，按当前默认逻辑创建一个新艺人兜底
+        # 如果 artist_id 为空或不存在的人员，按当前默认逻辑创建一个新人员兜底
         if not artist_id:
-            artist_id, _ = _artist_upsert("未知艺人")
+            artist_id, _ = _artist_upsert("未知人员")
         else:
             with conn_ctx() as conn:
                 row = conn.execute(
                     "SELECT id FROM itinerary_artists WHERE id=?", (artist_id,)
                 ).fetchone()
             if row is None:
-                artist_id, _ = _artist_upsert("未知艺人")
+                artist_id, _ = _artist_upsert("未知人员")
         created.append(
             create_event(
                 EventCreateIn(

@@ -120,8 +120,8 @@ onMounted(() => {
     <!-- 左侧品牌区 -->
     <section class="brand-side">
       <div class="brand-header">
-        <span class="brand-logo">⚖️</span>
-        <span class="brand-name">法衡 <span class="brand-name-accent">AI</span></span>
+        <span class="brand-logo">🌌</span>
+        <span class="brand-name">星河 <span class="brand-name-accent">工作台</span></span>
       </div>
 
       <div class="brand-hero">
@@ -130,7 +130,7 @@ onMounted(() => {
           <span class="brand-sub">Enterprise Multi-Agent Workspace</span>
         </h1>
         <p class="brand-lead">
-          法衡 AI 持续扩展合同起草、风险审查、履约提醒、会议纪要等企业智能体——<br />
+          星河持续扩展合同起草、风险审查、履约提醒、会议纪要等企业智能体——<br />
           AI 负责识别与生成，人负责确认与决策，让每一次内容发布都在风险可控之内。
         </p>
       </div>
@@ -143,7 +143,7 @@ onMounted(() => {
 
       <!--
         <footer class="brand-footer">
-          © 法衡 AI · 仅供演示 AI 辅助 · 内容均由模型生成
+          © 星河 · 仅供演示 AI 辅助 · 内容均由模型生成
         </footer>
       -->
     </section>
@@ -221,7 +221,7 @@ onMounted(() => {
       <!--
       <div class="login-meta">
         <span class="meta-tag">DEMO</span>
-        <span>法衡 AI · 企业多智能体工作台</span>
+        <span>星河 · 企业多智能体工作台</span>
       </div>
       -->
     </section>

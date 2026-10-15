@@ -13,8 +13,11 @@ import { useItineraryStore } from '../stores/itinerary'
  * @param {object} options
  * @param {(blob: Blob, filename?: string) => void} options.onResult
  *        录音/选文件完成、转写解析成功后回调（默认已弹确认框）
+ * @param {() => string | undefined} [options.getDefaultDate]
+ *        当日弹框语音录入注入默认日期（未提日期时兜底为点击的日期）；
+ *        悬浮按钮不传 → 无默认日期，全靠语音里说
  */
-export function useVoiceRecorder({ onResult } = {}) {
+export function useVoiceRecorder({ onResult, getDefaultDate } = {}) {
   const store = useItineraryStore()
 
   // 录音能力探测：getUserMedia 仅在安全上下文（HTTPS / localhost）可用。
@@ -99,7 +102,8 @@ export function useVoiceRecorder({ onResult } = {}) {
   async function processBlob(blob, filename) {
     phase.value = 'processing'
     try {
-      await store.parseVoiceAudio(blob, filename)
+      // default_date 在此时取值（录音结束）：弹框路径 = 点击的日期，悬浮路径 = undefined
+      await store.parseVoiceAudio(blob, filename, getDefaultDate?.())
       onResult?.()
     } catch {
       // error handled in store

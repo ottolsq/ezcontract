@@ -24,6 +24,7 @@ const rec = useVoiceRecorder({
   onResult: () => {
     store.voiceDialogVisible = true
   },
+  getDefaultDate: () => store.selectedDate,
 })
 
 function onVoiceClick() {

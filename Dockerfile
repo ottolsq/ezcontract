@@ -54,7 +54,8 @@ RUN chmod 755 /usr/local/bin/docker_start.sh
 
 EXPOSE 58069
 
-# 健康探活：复用 /api/health（也会打一次 LLM 网关，部署时按需裁剪）。
+# 健康探活：进程存活检查（/api/health 默认不打 LLM——探活不该烧 token；
+# 登录后的网关检查走 /api/health?llm=1，由前端触发）
 # TLS_CERT 设置时自动切 https（自签证书用 unverified 上下文，避免误报 unhealthy）
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD python -c "import os,sys,ssl,urllib.request as u; \

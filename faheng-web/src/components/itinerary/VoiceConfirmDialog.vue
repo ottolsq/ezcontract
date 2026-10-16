@@ -130,6 +130,7 @@ async function confirm() {
               placeholder="选择日期"
               size="small"
               value-format="YYYY-MM-DD"
+              :editable="false"
               style="width: 100%"
             />
           </div>
@@ -142,6 +143,7 @@ async function confirm() {
                 placeholder="开始"
                 size="small"
                 value-format="HH:mm"
+                :editable="false"
                 style="width: 100%"
               />
               <span>~</span>
@@ -150,6 +152,7 @@ async function confirm() {
                 placeholder="结束"
                 size="small"
                 value-format="HH:mm"
+                :editable="false"
                 style="width: 100%"
               />
             </div>

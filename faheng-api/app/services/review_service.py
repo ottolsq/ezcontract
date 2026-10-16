@@ -127,6 +127,44 @@ def new_review_id() -> str:
     return uuid.uuid4().hex[:12]
 
 
+# 合同特征词：上传门禁用。命中任一即视为"像合同"。
+# 词表刻意放宽（含俗称变体）——门禁只在"完全不像合同"时拦截，
+# 宁可放过（LLM 审查后产出低质量结果）不可错杀真合同。
+_CONTRACT_MARKERS = (
+    "甲方",
+    "乙方",
+    "合同",
+    "协议",
+    "双方",
+    "签署",
+    "发包方",
+    "承包方",
+    "供方",
+    "需方",
+    "买方",
+    "卖方",
+    "出租方",
+    "承租方",
+    "许可方",
+    "被许可方",
+    "委托方",
+    "受托方",
+)
+
+
+def _looks_like_contract(clauses, preamble, tail) -> bool:
+    """廉价门禁：上传文档是否像一份合同。
+
+    在开始 AI 审查（1-2 分钟计费调用）之前拦截明显不是合同的文档
+    （简历、文章、通知等）——全文没有一处合同特征词即拦截。
+    极简或不规范的真合同（如全文无甲乙方称呼）可能被误伤，
+    此时换一个更完整的版本即可，代价远小于白跑一次审查。
+    """
+    text = "\n".join(p.text for p in preamble + tail)
+    text += "\n" + "\n".join(c.text for c in clauses)
+    return any(marker in text for marker in _CONTRACT_MARKERS)
+
+
 async def save_upload(file: UploadFile) -> ReviewSession:
     """解析上传文件并切分条款（字节全程驻留内存，无状态化）"""
     filename = file.filename or "contract.docx"
@@ -158,6 +196,12 @@ async def save_upload(file: UploadFile) -> ReviewSession:
     clauses, preamble, tail = split_clauses(lines)
     if not clauses:
         raise HTTPException(400, "未能在文档中识别出任何条款内容")
+    if not _looks_like_contract(clauses, preamble, tail):
+        raise HTTPException(
+            400,
+            "这份文档不太像合同：全文未出现甲方/乙方/合同/协议等特征词。"
+            "请确认上传的是合同文件",
+        )
 
     session = ReviewSession(
         id=review_id,

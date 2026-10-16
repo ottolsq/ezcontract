@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { ElMessage } from 'element-plus'
 import api from '../api'
 
 const TOKEN_KEY = 'faheng_token'
@@ -18,6 +19,11 @@ export const useAuthStore = defineStore('auth', {
     // 从 localStorage 初始化——刷新页面也保持登录态
     token: localStorage.getItem(TOKEN_KEY) || '',
     username: localStorage.getItem(USERNAME_KEY) || '',
+    // LLM 网关健康：登录后查一次（见 checkLlmHealth）；不逐次预检——
+    // 预检本身是一次完整 LLM 往返，只会让所有操作延迟翻倍，
+    // 真正调用失败时后端 503 提示已覆盖
+    llmStatus: '', // '' 未查 | 'ok' | 'error'
+    llmError: '',
   }),
   getters: {
     isLoggedIn: (s) => Boolean(s.token),
@@ -35,7 +41,27 @@ export const useAuthStore = defineStore('auth', {
       this.username = data.username
       localStorage.setItem(TOKEN_KEY, this.token)
       localStorage.setItem(USERNAME_KEY, this.username)
+      // 登录后查一次 AI 网关健康（不阻塞登录流程，后台跑）
+      this.checkLlmHealth()
       return data
+    },
+
+    /** 登录后的一次性 AI 网关检查：让用户进系统即知道今天 AI 是否可用，
+     * 而不是做到一半才发现。异常时 toast + 存状态（页面可按需展示）。
+     * 静默成功——正常时不打扰用户。 */
+    async checkLlmHealth() {
+      if (!this.isLoggedIn) return
+      try {
+        const { data } = await api.get('/health', { params: { llm: 1 } })
+        this.llmStatus = data.llm || 'ok'
+        this.llmError = data.llm_error || ''
+        if (this.llmStatus !== 'ok') {
+          ElMessage.warning(this.llmError || 'AI 服务暂不可用，请及时联系管理员')
+        }
+      } catch {
+        // 网络级失败：health 接口本身不可达，登录都刚成功了，静默
+        this.llmStatus = ''
+      }
     },
 
     /** 退出：通知后端（最佳努力）+ 清本地态 */

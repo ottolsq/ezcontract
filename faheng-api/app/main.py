@@ -47,6 +47,42 @@ from app.services.compliance_db import init_db as _compliance_init_db  # noqa: E
 
 _compliance_init_db()
 
+@app.get("/api/health")
+async def health(llm: str | None = None):
+    """探活。
+
+    默认只查进程存活（Docker HEALTHCHECK 每 30s 调用，打 LLM 会一天
+    烧 2880 次计费调用）；llm=1 时连查一次 LLM 网关（前端登录后调用，
+    让用户进系统即知道今天 AI 是否可用）。
+    """
+    if llm != "1":
+        return {"status": "ok"}
+    llm_status = "ok"
+    llm_error = None
+    try:
+        reply = await chat_text(
+            [{"role": "user", "content": "只需回OK"}],
+            temperature=0,
+            max_tokens=100,
+            # 探活不需要思维链：实测 deepseek-flash 下省近半 completion
+            # tokens（80→28），登录后的这一次检查更接近交互场景
+            reasoning_effort="low",
+        )
+        if not reply.strip():
+            llm_status, llm_error = "empty", "LLM 返回为空"
+    except LLMConfigError as e:
+        llm_status, llm_error = "error", "AI 配置异常，请及时联系管理员（网关不可用）"
+        logger.warning("health 探活 LLM 异常：%s", e)
+    except Exception as e:  # noqa: BLE001
+        llm_status, llm_error = "error", str(e)[:200]
+    return {
+        "status": "ok",
+        "llm": llm_status,
+        "llm_model": settings.LLM_MODEL,
+        "llm_error": llm_error,
+    }
+
+
 # 部署形态：单容器由 uvicorn 同时 serve 前端 build 产物
 # （本地 dev 形态：web_dist/ 不存在，StaticFiles 不挂载，行为不变）
 WEB_DIST = Path(__file__).resolve().parent.parent / "web_dist"
@@ -55,6 +91,9 @@ if WEB_DIST.is_dir():
     # SPA history 模式兜底：业务路径（如 /review、/draft）刷新时返回 index.html，
     # 由 Vue Router 接管。/api/* 走业务路由，不会落到这里。
     # 必须在 app.mount 之前声明，否则被 StaticFiles 抢走。
+    # 注意：spa_fallback 的通配路由必须在 /api/health 等 API 路由之前
+    # include 的路由之外——FastAPI 按注册顺序匹配，这里定义在 API 路由
+    # 之后（模块底部），通配 /{full_path:path} 不会拦截已注册的 /api/*。
     @app.get("/", include_in_schema=False)
     async def spa_root():
         return FileResponse(WEB_INDEX)
@@ -75,27 +114,3 @@ if WEB_DIST.is_dir():
 
     # 必须在所有 /api 路由 include 之后挂载，避免拦截 API 请求
     app.mount("/", StaticFiles(directory=str(WEB_DIST), html=True), name="web")
-
-
-@app.get("/api/health")
-async def health():
-    """探活：含一次 LLM 网关连通性检查"""
-    llm_status = "ok"
-    llm_error = None
-    try:
-        reply = await chat_text(
-            [{"role": "user", "content": "回复：OK"}], temperature=0, max_tokens=500
-        )
-        if not reply.strip():
-            llm_status, llm_error = "empty", "LLM 返回为空"
-    except LLMConfigError as e:
-        llm_status, llm_error = "error", "AI 配置异常，请及时联系管理员（网关不可用）"
-        logger.warning("health 探活 LLM 异常：%s", e)
-    except Exception as e:  # noqa: BLE001
-        llm_status, llm_error = "error", str(e)[:200]
-    return {
-        "status": "ok",
-        "llm": llm_status,
-        "llm_model": settings.LLM_MODEL,
-        "llm_error": llm_error,
-    }

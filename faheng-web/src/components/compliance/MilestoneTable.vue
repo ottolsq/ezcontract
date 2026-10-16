@@ -104,6 +104,7 @@ async function onDueChange(m, value) {
               value-format="YYYY-MM-DD"
               placeholder="点击补录日期"
               size="small"
+              :editable="false"
               style="width: 140px"
               @update:model-value="(v) => onDueChange(row, v)"
             />
@@ -114,6 +115,7 @@ async function onDueChange(m, value) {
               value-format="YYYY-MM-DD"
               placeholder="待确认"
               size="small"
+              :editable="false"
               style="width: 140px"
               :clearable="true"
               @update:model-value="(v) => onDueChange(row, v)"

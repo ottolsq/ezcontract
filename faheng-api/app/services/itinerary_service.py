@@ -187,6 +187,21 @@ def delete_artist(artist_id: str) -> dict:
 # ── 语音解析 ──
 
 
+def _looks_like_speech(text: str) -> bool:
+    """廉价门禁：转写文本是否像"人在说话"。
+
+    在发 LLM 之前拦截明显的无效输入（如测试时念的「1234567。」）：
+    没有中文、或中文内容太短（单个语气词/一两个字）的文本不可能
+    构成行程描述，直接秒拒省一次 LLM 往返。纯中文判断可能误伤
+    外语语音——但 ASR 是中文模型，外语转写本来就不可靠，误伤可接受。
+    """
+    stripped = text.strip()
+    if not stripped:
+        return False
+    cjk_count = sum(1 for ch in stripped if "一" <= ch <= "鿿")
+    return cjk_count >= 4 or len(stripped) >= 20
+
+
 async def parse_voice_audio(
     data: bytes, mime: str, filename: str | None, default_artist_id: str | None,
     default_date: str | None = None,
@@ -196,6 +211,12 @@ async def parse_voice_audio(
     logger.info("语音识别结果（%d 字符）：%s", len(text), text)
     if not text.strip():
         raise HTTPException(422, "未能识别到语音内容，请靠近麦克风重试")
+    if not _looks_like_speech(text):
+        raise HTTPException(
+            422,
+            f"未识别到有效语音内容（听到「{text[:20]}」），"
+            "请说明人员、日期和事项后重试",
+        )
     out = await parse_voice(
         VoiceParseIn(
             text=text, default_artist_id=default_artist_id, default_date=default_date

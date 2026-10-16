@@ -21,14 +21,14 @@ function update(field, value) {
     </div>
     <div class="form-item">
       <label class="required">日期</label>
-      <el-date-picker :modelValue="modelValue.event_date" @update:modelValue="v => update('event_date', v)" type="date" placeholder="选择日期" size="small" value-format="YYYY-MM-DD" style="width: 100%" />
+      <el-date-picker :modelValue="modelValue.event_date" @update:modelValue="v => update('event_date', v)" type="date" placeholder="选择日期" size="small" value-format="YYYY-MM-DD" :editable="false" style="width: 100%" />
     </div>
     <div class="form-item">
       <label>时间段</label>
       <div class="time-range">
-        <el-time-picker :modelValue="modelValue.start_time" @update:modelValue="v => update('start_time', v)" placeholder="开始" size="small" value-format="HH:mm" style="width: 100%" />
+        <el-time-picker :modelValue="modelValue.start_time" @update:modelValue="v => update('start_time', v)" placeholder="开始" size="small" value-format="HH:mm" :editable="false" style="width: 100%" />
         <span>~</span>
-        <el-time-picker :modelValue="modelValue.end_time" @update:modelValue="v => update('end_time', v)" placeholder="结束" size="small" value-format="HH:mm" style="width: 100%" />
+        <el-time-picker :modelValue="modelValue.end_time" @update:modelValue="v => update('end_time', v)" placeholder="结束" size="small" value-format="HH:mm" :editable="false" style="width: 100%" />
       </div>
     </div>
     <div class="form-item">

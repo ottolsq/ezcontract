@@ -41,6 +41,11 @@ function checkMobile() {
 onMounted(() => {
   checkMobile()
   window.addEventListener('resize', checkMobile)
+  // 刷新页面（token 从 localStorage 恢复、不走 login）时补一次 AI 健康检查；
+  // login 路径已在 auth.login 里查过，这里靠 llmStatus 为空判断去重
+  if (auth.isLoggedIn && !auth.llmStatus) {
+    auth.checkLlmHealth()
+  }
 })
 
 onUnmounted(() => {

@@ -77,6 +77,15 @@ async def save_upload(file: UploadFile) -> dict:
 
     if not clauses:
         raise HTTPException(400, "未能在文档中识别出任何条款内容")
+    # 合同门禁（与审查模块同口径）：非合同文档在入库与 LLM 提取前拦截
+    from app.services.review_service import _looks_like_contract
+
+    if not _looks_like_contract(clauses, preamble, tail):
+        raise HTTPException(
+            400,
+            "这份文档不太像合同：全文未出现甲方/乙方/合同/协议等特征词。"
+            "请确认上传的是合同文件",
+        )
 
     candidates = prefilter_candidates(clauses, paragraphs)
     meta_lines = collect_meta_lines(preamble, tail)

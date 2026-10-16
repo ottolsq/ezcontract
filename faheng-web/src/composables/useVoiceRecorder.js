@@ -132,7 +132,8 @@ function _resetSoft() {
  *
  * 【已知限制（浏览器安全模型，代码无法绕过）】公网 IP 裸 HTTP 部署时
  * getUserMedia 不可用（navigator.mediaDevices 为 undefined），只能走
- * 本兜底。根治 = 部署 HTTPS（域名 + Let's Encrypt 或 Cloudflare Tunnel）。
+ * 本兜底。根治 = 部署 HTTPS（自签名证书挂载见 README，或域名 + Let's
+ * Encrypt / Cloudflare Tunnel）。
  * 首次进入兜底时向用户说明，避免「为什么行为不一样」的困惑。
  *
  * 取消选择（onchange 空 files / cancel 事件）必须软复位——否则 phase 卡死

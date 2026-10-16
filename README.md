@@ -88,6 +88,32 @@ curl http://127.0.0.1:58069/api/health
 
 > 构建时若缺少 submodule 内容（`faheng-api/skills/` 为空目录），`skill_refs.py` 会静默降级返回空参考，审查仍可运行但不会获得 skill 知识注入。建议 CI / 发布流程显式 `git submodule update --init`。
 
+### HTTPS（自签名证书，解决浏览器麦克风不可用）
+
+公网 IP + HTTP 部署时，浏览器判定为非安全上下文，麦克风（getUserMedia）等 API 被硬性禁用——语音录入只能走"系统录音器上传"兜底。挂载自签名证书开启 HTTPS 后即可浏览器直接录音。
+
+```bash
+# 1. 服务器上生成证书（IP 换成实际公网 IP；有效期 395 天，到期重跑+重启容器）。
+#    用镜像自带 openssl，宿主机无需安装任何工具；-u 0 必须（脚本会自动把属主
+#    修正为容器运行用户 faheng/1000，宿主机无需手工 chown）
+mkdir -p tls
+sudo docker run --rm -v $(pwd)/tls:/tls -u 0 faheng:latest \
+    /bin/bash /app/scripts/gen_cert.sh <公网IP>
+
+# 2. 原部署命令追加证书挂载与两个环境变量（其余不变）
+sudo docker run -d --name faheng --restart unless-stopped \
+  -p 58069:58069 --env-file .env \
+  -v $(pwd)/tls:/tls:ro -e TLS_CERT=/tls/cert.pem -e TLS_KEY=/tls/cert.key \
+  faheng:latest
+```
+
+切换须知：
+
+- 访问地址改用 `https://<公网IP>:58069`（uvicorn 不做 http→https 跳转，旧 http 书签直接失效）
+- 首次访问有浏览器红色警告：Chrome/Edge/安卓点"高级→继续前往"，之后记住例外；**iOS Safari 无法绕过自签证书**（需安装描述文件并手动信任，普通用户不友好），iPhone 用户仍走录音文件上传兜底
+- 云厂商安全组需放行 58069 端口（与 HTTP 相同端口，无需新增）
+- 不设置 `TLS_CERT`/`TLS_KEY` 则完全保持纯 HTTP 模式，本地 dev 与旧部署不受影响
+
 镜像要点：
 
 - `.env` 不进镜像（`.dockerignore` 已排除），运行时 `--env-file` 注入

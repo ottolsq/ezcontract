@@ -26,6 +26,7 @@ _test_sig.docx
 *.tar
 q.md
 performancePlan.md
+faheng.tar.gz
 
 # Claude Code / IDE / 系统
 .claude/

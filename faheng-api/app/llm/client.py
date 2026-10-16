@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import typing
 from typing import TypeVar
 
 from openai import APIConnectionError, APIStatusError, AsyncOpenAI
@@ -107,6 +108,53 @@ def _salvage_array(cleaned: str) -> list | None:
         return None
 
 
+def _salvage_list_field(schema: type[BaseModel]) -> tuple[str, type[BaseModel]] | None:
+    """找 schema 中第一个 list[BaseModel] 字段，返回 (字段名, 元素 schema)。
+
+    截断抢救的通用锚点：审查 risks / 行程 events 都是此形态。
+    没有这种字段（如纯标量 schema）则抢救无意义。
+    """
+    for name, field in schema.model_fields.items():
+        ann = field.annotation
+        origin = typing.get_origin(ann)
+        if origin is list and len(typing.get_args(ann)) == 1:
+            elem = typing.get_args(ann)[0]
+            if isinstance(elem, type) and issubclass(elem, BaseModel):
+                return name, elem
+    return None
+
+
+def _validate_salvaged(items: list, schema: type[T]) -> T | None:
+    """把抢救出的数组元素装回目标 schema；元素残缺则逐个过滤。
+
+    关键防御：pydantic 默认忽略未知字段，对不含该 list 字段的 schema 做
+    model_validate({"字段名": items}) 会「空验证」成功（全部默认值），
+    把有内容的输出静默变成空结果——比抛错更糟。因此必须事后确认
+    list 字段确实被填充，元素 schema 不匹配时返回 None 走重试。
+    """
+    anchor = _salvage_list_field(schema)
+    if anchor is None:
+        return None
+    field_name, elem_schema = anchor
+
+    # 元素可以是 dict（对象数组）或标量（如 list[str]），只过滤 dict 场景
+    valid: list = []
+    for it in items:
+        if isinstance(it, dict):
+            try:
+                valid.append(elem_schema.model_validate(it))
+            except ValidationError:
+                continue
+        else:
+            valid.append(it)
+    if not valid:
+        return None
+    try:
+        return schema.model_validate({field_name: valid})
+    except ValidationError:
+        return None
+
+
 def _ensure_choices(resp) -> None:
     """网关异常防御：部分网关（DeepSeek 等）偶发 HTTP 200 但 choices 为 null，
     直接下标访问会 TypeError 裸崩成 500。这里转成带原始响应的
@@ -186,7 +234,8 @@ async def chat_json(
     """调用 LLM 并解析为 pydantic schema。
 
     - 失败自动重试（把上次错误原因附进重试消息）
-    - salvage=True 且 schema 含名为 risks 的 list 字段时启用截断抢救
+    - salvage=True 且 schema 的首个 list 字段（risks / events / nodes）可抢救时，
+      对截断输出（finish_reason=length）做截断抢救
     - reasoning_effort：交互场景传 "low" 跳过思维链等待（同 chat_text）
     """
     current_messages = list(messages)
@@ -239,25 +288,9 @@ async def chat_json(
             if salvage and finish_reason == "length":
                 items = _salvage_array(cleaned)
                 if items:
-                    try:
-                        return schema.model_validate({"risks": items})
-                    except ValidationError:
-                        pass
-                    # 抢救出的元素逐个过滤
-                    if schema.__name__ == "ReviewLLMOut":
-                        from app.schemas.review import RiskItem
-
-                        valid = []
-                        for it in items:
-                            if isinstance(it, dict):
-                                try:
-                                    valid.append(RiskItem.model_validate(it))
-                                except ValidationError:
-                                    continue
-                        if valid:
-                            from app.schemas.review import ReviewLLMOut
-
-                            return ReviewLLMOut(risks=valid)  # type: ignore[return-value]
+                    salvaged = _validate_salvaged(items, schema)
+                    if salvaged is not None:
+                        return salvaged
             last_error = (
                 f"输出不是合法 JSON（finish_reason={finish_reason}）"
                 f"，前 100 字符：{cleaned[:100]}"

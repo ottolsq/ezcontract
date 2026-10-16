@@ -103,13 +103,24 @@ function pickMimeType() {
 }
 
 /** 转写 + 解析共用出口：上传用 start 时的快照（日期/人员），成功后回调快照 onResult。
- * 解析出 0 条行程时不弹确认框（onResult 不调）——空框只会困惑用户 */
+ * 解析出 0 条行程时不弹确认框（onResult 不调）——空框只会困惑用户；
+ * 但要 toast 告知识别原文与原因，不能静默无反应（用户无从分辨成功/失败） */
 async function processBlob(blob, filename) {
   phase.value = 'processing'
   const snap = _snap
   try {
     const out = await store().parseVoiceAudio(blob, filename, snap?.date, snap?.artistId)
-    if ((out?.events || []).length > 0) snap?.onResult?.()
+    if ((out?.events || []).length > 0) {
+      snap?.onResult?.()
+    } else {
+      const heard = (store().voiceText || '').trim()
+      if (heard) {
+        ElMessage.info({
+          message: `已听到「${heard.slice(0, 30)}${heard.length > 30 ? '…' : ''}」，但未识别到行程内容，请说明人员、日期和事项后重试`,
+          duration: 5000,
+        })
+      }
+    }
     _snap = null
   } catch {
     // error handled in store
